@@ -223,4 +223,13 @@ with col_main:
     m1, m2, m3 = st.columns(3)
     
     deg_res = np.degrees(np.arctan2(res_u, res_v))
-    if
+    if deg_res < 0: deg_res += 360
+    
+    m1.metric("Tiro Totale", f"{res_ton:.1f} t")
+    m2.metric("Direzione", f"{deg_res:.0f}°")
+    
+    dir_rot = "STABILE"
+    if abs(Total_Moment) > 20:
+        dir_rot = "SINISTRA" if Total_Moment > 0 else "DRITTA"
+    
+    m3.metric("Rotazione", dir_rot, delta=f"{abs(Total_Moment):.0f} kNm", delta_color="off")
