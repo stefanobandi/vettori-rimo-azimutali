@@ -9,20 +9,17 @@ import pandas as pd
 st.set_page_config(page_title="ASD Centurion V5.4", layout="wide")
 
 # --- GESTIONE SESSION STATE ---
-# Definiamo i valori di default
 defaults = {
     "p1": 50.0, "a1": 0.0,    # Motore SX
     "p2": 50.0, "a2": 0.0,    # Motore DX
     "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default
 }
 
-# Inizializzazione State
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
 # --- FUNZIONI DI CALLBACK PER LA SINCRONIZZAZIONE ---
-# Queste funzioni servono a tenere allineati slider e casella di testo
 def update_from_slider(key):
     st.session_state[key] = st.session_state[f"{key}_slider"]
 
@@ -35,18 +32,23 @@ def reset_engines():
     st.session_state.a1 = 0.0
     st.session_state.p2 = 50.0
     st.session_state.a2 = 0.0
-    # Forziamo l'aggiornamento dei widget 'figli' se esistono
+    # Aggiorna i widget se esistono nello state
     if 'p1_slider' in st.session_state: st.session_state.p1_slider = 50.0
     if 'p1_input' in st.session_state: st.session_state.p1_input = 50.0
-    # (Ripetere per gli altri se necessario, ma Streamlit gestisce il binding al rerun)
+    if 'p2_slider' in st.session_state: st.session_state.p2_slider = 50.0
+    if 'p2_input' in st.session_state: st.session_state.p2_input = 50.0
+    # Azimut non serve resettarlo a 0 forzatamente nei widget se lo state è aggiornato
 
 def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
+    if 'pp_x_slider' in st.session_state: st.session_state.pp_x_slider = 0.0
+    if 'pp_x_input' in st.session_state: st.session_state.pp_x_input = 0.0
+    if 'pp_y_slider' in st.session_state: st.session_state.pp_y_slider = 5.42
+    if 'pp_y_input' in st.session_state: st.session_state.pp_y_input = 5.42
 
 # --- COMPONENTE GRAFICO CUSTOM: SLIDER + INPUT ---
-def render_control(label, key, min_val, max_val, step=1.0, help_txt=None):
-    """Crea una riga con Slider e Number Input sincronizzati"""
+def render_control(label, key, min_val, max_val, step=1.0):
     c1, c2 = st.columns([3, 1])
     with c1:
         st.slider(
@@ -57,8 +59,7 @@ def render_control(label, key, min_val, max_val, step=1.0, help_txt=None):
             key=f"{key}_slider", 
             value=float(st.session_state[key]),
             on_change=update_from_slider,
-            args=(key,),
-            help=help_txt
+            args=(key,)
         )
     with c2:
         st.number_input(
@@ -70,7 +71,7 @@ def render_control(label, key, min_val, max_val, step=1.0, help_txt=None):
             value=float(st.session_state[key]),
             on_change=update_from_input,
             args=(key,),
-            label_visibility="hidden" # Nasconde l'etichetta ridondante
+            label_visibility="hidden"
         )
 
 # --- HEADER ---
@@ -91,16 +92,20 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### Manovre Rapide")
-    # Definiamo i preset direttamente qui con lambda o funzioni locali
     if st.button("Avanti Tutta", use_container_width=True):
-        st.session_state.p1, st.session_state.a1 = 80.0, 0.0
-        st.session_state.p2, st.session_state.a2 = 80.0, 0.0
+        st.session_state.p1 = 80.0; st.session_state.a1 = 0.0
+        st.session_state.p2 = 80.0; st.session_state.a2 = 0.0
+        st.rerun()
+
     if st.button("Crabbing DX", use_container_width=True):
-        st.session_state.p1, st.session_state.a1 = 60.0, 90.0
-        st.session_state.p2, st.session_state.a2 = 60.0, 90.0
+        st.session_state.p1 = 60.0; st.session_state.a1 = 90.0
+        st.session_state.p2 = 60.0; st.session_state.a2 = 90.0
+        st.rerun()
+
     if st.button("Rotazione Oraria", use_container_width=True):
-        st.session_state.p1, st.session_state.a1 = 50.0, 0.0
-        st.session_state.p2, st.session_state.a2 = 50.0, 180.0
+        st.session_state.p1 = 50.0; st.session_state.a1 = 0.0
+        st.session_state.p2 = 50.0; st.session_state.a2 = 180.0
+        st.rerun()
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
@@ -147,6 +152,7 @@ if ton1 > 0.1 and ton2 > 0.1:
 
 origin_res = np.array([0.0, -12.0])
 logic_used = "Centro"
+
 if intersection is not None and np.linalg.norm(intersection - np.array([0, -12])) < 60:
     origin_res = intersection
     logic_used = "Intersezione"
@@ -155,60 +161,4 @@ elif ton1 + ton2 > 0.1:
     origin_res = np.array([w_x, -12.0])
 
 # --- LAYOUT PLANCIA ---
-col_sx, col_center, col_dx = st.columns([1, 2.2, 1], gap="small")
-
-# Helper per orologi
-def plot_azimuth_clock(angle, color):
-    fig, ax = plt.subplots(figsize=(2, 2), subplot_kw={'projection': 'polar'})
-    ax.set_theta_zero_location('N')
-    ax.set_theta_direction(-1)
-    ax.set_yticks([])
-    ax.set_xticks(np.radians([0, 90, 180, 270]))
-    ax.set_xticklabels([])
-    ax.spines['polar'].set_visible(False)
-    ax.grid(True, alpha=0.2)
-    ax.arrow(np.radians(angle), 0, 0, 0.9, color=color, width=0.18, head_width=0, length_includes_head=True)
-    fig.patch.set_alpha(0)
-    return fig
-
-# === COLONNA SX ===
-with col_sx:
-    st.markdown("<h4 style='text-align: center; color: #d32f2f;'>PORT (SX)</h4>", unsafe_allow_html=True)
-    render_control("Potenza %", "p1", 0, 100, 1.0)
-    render_control("Azimut °", "a1", 0, 360, 1.0)
-    st.pyplot(plot_azimuth_clock(st.session_state.a1, '#d32f2f'), use_container_width=False)
-    st.metric("Spinta SX", f"{ton1:.1f} t")
-
-# === COLONNA DX ===
-with col_dx:
-    st.markdown("<h4 style='text-align: center; color: #388e3c;'>STBD (DX)</h4>", unsafe_allow_html=True)
-    render_control("Potenza %", "p2", 0, 100, 1.0)
-    render_control("Azimut °", "a2", 0, 360, 1.0)
-    st.pyplot(plot_azimuth_clock(st.session_state.a2, '#388e3c'), use_container_width=False)
-    st.metric("Spinta DX", f"{ton2:.1f} t")
-
-# === COLONNA CENTRALE ===
-with col_center:
-    # 1. Grafico
-    fig, ax = plt.subplots(figsize=(6, 8))
-    
-    # Scafo
-    hw = 5.85; stern = -16.25; bow = 16.25; shld = 5.0
-    verts = [(-hw, stern), (hw, stern), (hw, shld), (0, bow), (-hw, shld), (-hw, stern)]
-    codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.CURVE3, Path.CURVE3, Path.LINETO]
-    patch = PathPatch(Path(verts, codes), facecolor='#ececec', edgecolor='#333', lw=2, zorder=1)
-    ax.add_patch(patch)
-    
-    # Pivot Point
-    ax.plot(st.session_state.pp_x, st.session_state.pp_y, 'ko', markersize=8, zorder=10)
-    ax.text(st.session_state.pp_x + 1, st.session_state.pp_y, "PP", fontsize=10, fontweight='bold')
-
-    # Vettori
-    scale = 0.35
-    ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.5, fc='#d32f2f', ec='#d32f2f', alpha=0.7, zorder=5)
-    ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.5, fc='#388e3c', ec='#388e3c', alpha=0.7, zorder=5)
-
-    if res_ton > 0.1:
-        ax.scatter(origin_res[0], origin_res[1], c='blue', marker='x', s=50, zorder=6)
-        ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.5, fc='blue', ec='blue', alpha=0.4, zorder=4)
-        if logic_used
+col_sx, col_center, col_dx = st.columns(
