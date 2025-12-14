@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.9", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.10", layout="wide")
 
 # --- GESTIONE SESSION STATE ---
 defaults = {
@@ -156,25 +156,22 @@ with col_center:
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 2. FRECCIA MOMENTO (Spostata a prua)
+    # 2. FRECCIA MOMENTO (CORRETTA)
     if abs(Total_Moment) > 10:
         arc_color = '#800080'
-        # Posizione fissa davanti alla prua (y=22 circa)
         arrow_y_pos = 22.0
         
-        # Definiamo Start ed End in base alla direzione di rotazione
         if Total_Moment > 0:
-            # Rotazione a Sinistra (Antiorario/Port) -> Freccia punta a SX
-            # Parte da Destra (+X) e va a Sinistra (-X)
+            # Rotazione SX: Parte da DX va a SX. Curvatura positiva (up)
             p_start = (5.0, arrow_y_pos)
             p_end = (-5.0, arrow_y_pos)
-            connection = "arc3,rad=0.3" # Curva verso l'alto
+            connection = "arc3,rad=0.3"
         else:
-            # Rotazione a Dritta (Orario/Stbd) -> Freccia punta a DX
-            # Parte da Sinistra (-X) e va a Destra (+X)
+            # Rotazione DX: Parte da SX va a DX. 
+            # Per curvare in alto (simmetrico), rad deve essere NEGATIVO
             p_start = (-5.0, arrow_y_pos)
             p_end = (5.0, arrow_y_pos)
-            connection = "arc3,rad=0.3"
+            connection = "arc3,rad=-0.3" # <--- MODIFICA QUI
 
         style = f"Simple, tail_width={min(3, abs(Total_Moment)/100)}, head_width=8, head_length=8"
         
@@ -182,9 +179,8 @@ with col_center:
                                      connectionstyle=connection, 
                                      arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
         
-        # Etichetta Rotazione
         rot_label = "ROT. SX" if Total_Moment > 0 else "ROT. DX"
-        ax.text(0, arrow_y_pos + 2.5, rot_label, ha='center', color=arc_color, fontweight='bold')
+        ax.text(0, arrow_y_pos + 3.0, rot_label, ha='center', color=arc_color, fontweight='bold', fontsize=12)
 
     # Motori
     scale = 0.4
