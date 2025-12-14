@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.11", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.10", layout="wide")
 
 # --- GESTIONE SESSION STATE ---
 defaults = {
@@ -29,69 +29,24 @@ def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
-# --- FUNZIONE OROLOGIO (POLAR PLOT) ---
-def plot_clock(azimuth_deg, color, label):
-    # Crea un piccolo grafico polare
-    fig, ax = plt.subplots(figsize=(2.5, 2.5), subplot_kw={'projection': 'polar'})
-    ax.set_theta_zero_location('N') # Nord in alto
-    ax.set_theta_direction(-1)      # Senso orario
-    
-    # Rimuove le scritte inutili per pulizia
-    ax.set_yticklabels([])
-    ax.set_xticks(np.radians([0, 90, 180, 270]))
-    ax.set_xticklabels(['N', 'E', 'S', 'W'], fontsize=8)
-    
-    # Freccia indicatrice
-    ax.arrow(np.radians(azimuth_deg), 0, 0, 0.9, color=color, width=0.15, 
-             head_width=0, length_includes_head=True)
-    
-    # Stile
-    ax.grid(True, alpha=0.3)
-    fig.patch.set_alpha(0) # Sfondo trasparente
-    
-    return fig
-
 # --- HEADER ---
-st.markdown("<h1 style='text-align: center; color: #2c3e50;'>⚓ Rimorchiatore ASD 'CENTURION' V5.11</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align: center; color: #7f8c8d;'>Simulazione Vettoriale (Matplotlib Engine)</h4>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
+st.markdown("""
+<div style='text-align: center;'>
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.10 (Stable)</span>
+</div>
+""", unsafe_allow_html=True)
+
 st.write("---")
 
-# --- SIDEBAR (CONTROLLI E OROLOGI) ---
+# --- SIDEBAR (Solo Reset) ---
 with st.sidebar:
-    st.header("Comandi")
-    
-    # Reset
-    c1, c2 = st.columns(2)
-    with c1: st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    with c2: st.button("Reset PP", on_click=reset_pivot, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # --- PORT (SX) ---
-    st.markdown("<h3 style='color: #d63031; text-align: center;'>PORT (SX)</h3>", unsafe_allow_html=True)
-    # Slider
-    st.slider("Azimut SX", 0, 360, key="a1")
-    st.slider("Potenza SX %", 0, 100, key="p1")
-    # Orologio SX
-    st.pyplot(plot_clock(st.session_state.a1, '#d63031', "SX"), use_container_width=False)
-    
-    st.markdown("---")
-    
-    # --- STBD (DX) ---
-    st.markdown("<h3 style='color: #27ae60; text-align: center;'>STBD (DX)</h3>", unsafe_allow_html=True)
-    # Slider
-    st.slider("Azimut DX", 0, 360, key="a2")
-    st.slider("Potenza DX %", 0, 100, key="p2")
-    # Orologio DX
-    st.pyplot(plot_clock(st.session_state.a2, '#27ae60', "DX"), use_container_width=False)
-    
-    st.markdown("---")
-    
-    # --- PIVOT POINT ---
-    st.markdown("### 📍 Config. Pivot Point")
-    st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.5, key="pp_y")
-    st.slider("Trasversale (X)", -5.0, 5.0, step=0.5, key="pp_x")
-
+    st.header("Comandi Globali")
+    st.markdown("### 🔄 Reset")
+    st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
+    st.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
+    st.info("Usa i tasti sopra per riportare i valori ai parametri di default.")
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
@@ -122,7 +77,7 @@ M_sx = r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]
 M_dx = r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]
 Total_Moment = M_sx + M_dx
 
-# Intersezione (Logica Vettoriale)
+# Intersezione
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1 = np.radians(90 - angle1_deg)
     th2 = np.radians(90 - angle2_deg)
@@ -150,76 +105,100 @@ elif ton1 + ton2 > 0.1:
     origin_res = np.array([w_x, -12.0])
     logic_used = "B (Media)"
 
-# --- GRAFICA CENTRALE (MATPLOTLIB) ---
-col_main = st.container()
+# --- LAYOUT ---
+col_sx, col_center, col_dx = st.columns([1, 2, 1], gap="medium")
 
-with col_main:
-    # Creazione Figura
+def plot_clock(azimuth_deg, color):
+    fig, ax = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    ax.set_yticks([])
+    ax.set_xticks(np.radians([0, 90, 180, 270]))
+    ax.set_xticklabels(['0', '90', '180', '270'])
+    ax.arrow(np.radians(azimuth_deg), 0, 0, 0.9, color=color, width=0.15, head_width=0, length_includes_head=True)
+    ax.grid(True, alpha=0.3)
+    fig.patch.set_alpha(0)
+    return fig
+
+# === PORT ===
+with col_sx:
+    st.markdown("<h3 style='text-align: center; color: #ff4b4b;'>PORT (SX)</h3>", unsafe_allow_html=True)
+    st.slider("Potenza SX (%)", 0, 100, step=1, key="p1")
+    st.metric("Spinta SX", f"{ton1:.1f} t")
+    st.slider("Azimut SX (°)", 0, 360, step=1, key="a1")
+    st.pyplot(plot_clock(st.session_state.a1, 'red'), use_container_width=False)
+
+# === STBD ===
+with col_dx:
+    st.markdown("<h3 style='text-align: center; color: #4CAF50;'>STBD (DX)</h3>", unsafe_allow_html=True)
+    st.slider("Potenza DX (%)", 0, 100, step=1, key="p2")
+    st.metric("Spinta DX", f"{ton2:.1f} t")
+    st.slider("Azimut DX (°)", 0, 360, step=1, key="a2")
+    st.pyplot(plot_clock(st.session_state.a2, 'green'), use_container_width=False)
+
+# === CENTER ===
+with col_center:
+    with st.expander("📍 Configurazione Pivot Point", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1: st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.1, key="pp_y")
+        with c2: st.slider("Trasversale (X)", -5.0, 5.0, step=0.1, key="pp_x")
+
     fig, ax = plt.subplots(figsize=(8, 10))
     
-    # 1. DISEGNO SCAFO (Migliorato V5.11)
-    # Punti scafo più dettagliati rispetto alla V5.10
-    hw = 5.85; stern = -16.25; bow_tip = 16.25
-    verts = [
-        (-hw, stern), (hw, stern), # Poppa
-        (hw, 5.0), # Fianco dritto
-        (0, bow_tip), # Punta Prua
-        (-hw, 5.0), # Fianco sinistro
-        (-hw, stern) # Chiusura
-    ]
+    # 1. DISEGNO SCAFO (Originale Semplice V5.10)
+    hw = 5.85; stern = -16.25; bow_tip = 16.25; shoulder = 5.0
+    verts = [(-hw, stern), (hw, stern), (hw, shoulder), (0, bow_tip), (-hw, shoulder), (-hw, stern)]
     codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.CURVE3, Path.CURVE3, Path.LINETO]
-    patch = PathPatch(Path(verts, codes), facecolor='#dcdde1', edgecolor='#2f3640', lw=2, zorder=1)
+    patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#404040', lw=3, zorder=1)
     ax.add_patch(patch)
     
     # Pivot Point
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=150, zorder=10)
-    ax.text(st.session_state.pp_x + 0.7, st.session_state.pp_y, "PP", fontsize=12, weight='bold', zorder=10)
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 2. FRECCIA MOMENTO (Attorno al PP)
+    # 2. FRECCIA MOMENTO (CORRETTA - A prua)
     if abs(Total_Moment) > 10:
-        arc_color = '#8e44ad' # Viola
-        moment_sign = np.sign(Total_Moment) # +1 SX, -1 DX
+        arc_color = '#800080'
+        arrow_y_pos = 22.0
         
-        # Disegno arco che mostra la rotazione
-        style = f"Simple, tail_width=2, head_width=10, head_length=8"
-        
-        # Se rotazione a sinistra (antiorario), la freccia va su a destra del PP
         if Total_Moment > 0:
-            p_start = (pp_pos[0] + 5, pp_pos[1] - 2)
-            p_end = (pp_pos[0] + 5, pp_pos[1] + 2)
-            connection = "arc3,rad=-0.5" # Curva verso sinistra
-            rot_label = "ROT. SX"
+            # Rotazione SX
+            p_start = (5.0, arrow_y_pos)
+            p_end = (-5.0, arrow_y_pos)
+            connection = "arc3,rad=0.3"
         else:
-            p_start = (pp_pos[0] - 5, pp_pos[1] - 2)
-            p_end = (pp_pos[0] - 5, pp_pos[1] + 2)
-            connection = "arc3,rad=0.5" # Curva verso destra
-            rot_label = "ROT. DX"
-            
+            # Rotazione DX
+            p_start = (-5.0, arrow_y_pos)
+            p_end = (5.0, arrow_y_pos)
+            connection = "arc3,rad=-0.3" 
+
+        style = f"Simple, tail_width={min(3, abs(Total_Moment)/100)}, head_width=8, head_length=8"
+        
         ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end,
                                      connectionstyle=connection, 
                                      arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
         
-        ax.text(0, 20, rot_label, ha='center', color=arc_color, fontweight='bold', fontsize=14)
+        rot_label = "ROT. SX" if Total_Moment > 0 else "ROT. DX"
+        ax.text(0, arrow_y_pos + 3.0, rot_label, ha='center', color=arc_color, fontweight='bold', fontsize=12)
 
     # Motori
     scale = 0.4
-    ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='#d63031', ec='#d63031', width=0.3, alpha=0.8, zorder=4)
-    ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='#27ae60', ec='#27ae60', width=0.3, alpha=0.8, zorder=4)
+    ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
+    ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
 
     # Risultante
-    ax.scatter(origin_res[0], origin_res[1], c='#2980b9', s=50, marker='D', zorder=4)
-    ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.0, fc='#2980b9', ec='#2980b9', width=0.6, alpha=0.5, zorder=4)
+    ax.scatter(origin_res[0], origin_res[1], c='blue', s=40, marker='x', zorder=4)
+    ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
 
-    # Linee di proiezione (solo se intersezione)
     if logic_used == "C (Intersezione)" and abs(origin_res[1]) < 40:
-        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.2)
-        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.2)
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
 
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
     st.pyplot(fig)
     
-    # 3. METRICHE
-    st.markdown("### 📊 Risultato Dinamico")
+    # 3. Analisi Dinamica
+    st.markdown("### 📊 Analisi Dinamica")
     m1, m2, m3 = st.columns(3)
     
     deg_res = np.degrees(np.arctan2(res_u, res_v))
