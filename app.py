@@ -33,6 +33,7 @@ def reset_pivot():
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center;'>
+    <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
     <span style='color: #666; font-size: 0.9em;'>Versione 5.10 (Stable)</span>
 </div>
