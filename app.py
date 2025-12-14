@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
+# --- CONFIGURAZIONE PAGINA ---
+st.set_page_config(page_title="ASD Centurion V5.2", layout="wide")
+
 # --- GESTIONE SESSION STATE (Memoria) ---
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
@@ -16,95 +19,39 @@ for key, val in defaults.items():
         st.session_state[key] = val
 
 # Funzioni di Callback
-def reset_engines():
+def reset_all():
     st.session_state.p1 = 50
     st.session_state.a1 = 0
     st.session_state.p2 = 50
     st.session_state.a2 = 0
-
-def reset_pp():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
-# --- Configurazione Pagina ---
-st.set_page_config(page_title="ASD Centurion V5.2", layout="wide")
-
-# --- Titolo e Dati Nave ---
-st.title("⚓ Rimorchiatore ASD 'CENTURION'")
+# --- TITOLO E HEADER ---
+st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown("""
-**Dimensioni:** 32.50 m x 11.70 m | **Bollard Pull:** 70 ton | **Logica:** Intersezione Vettoriale
-""")
+<div style='text-align: center;'>
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
+    <span style='color: #666; font-size: 0.9em;'>Per informazioni contattare: <b>stefano.bandi22@gmail.com</b></span>
+</div>
+""", unsafe_allow_html=True)
 
-# --- Sidebar: Configurazione Pivot Point ---
+st.write("---")
+
+# --- SIDEBAR (Solo Reset) ---
 with st.sidebar:
-    st.header("📍 Pivot Point")
-    st.button("Reset PP", on_click=reset_pp)
-    pp_y = st.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", help="Positivo = Prua")
-    pp_x = st.slider("Trasversale (X)", -5.0, 5.0, key="pp_x")
+    st.header("Comandi Globali")
+    st.button("🔄 RESET TOTALE", on_click=reset_all, type="primary", use_container_width=True)
+    st.info("Premi Reset per riportare motori e Pivot Point alla condizione di default.")
 
-# --- Funzioni Matematiche ---
-def intersect_lines(p1, angle1_deg, p2, angle2_deg):
-    th1 = np.radians(90 - angle1_deg)
-    th2 = np.radians(90 - angle2_deg)
-    v1 = np.array([np.cos(th1), np.sin(th1)])
-    v2 = np.array([np.cos(th2), np.sin(th2)])
-    matrix = np.column_stack((v1, -v2))
-    delta = p2 - p1
-    if abs(np.linalg.det(matrix)) < 1e-4:
-        return None
-    t = np.linalg.solve(matrix, delta)[0]
-    return p1 + t * v1
-
-# --- Layout Comandi Motori ---
-col_res, col1, col2 = st.columns([0.2, 1, 1])
-
-with col_res:
-    st.write("") 
-    st.write("")
-    st.button("🔄 RESET", on_click=reset_engines, type="primary")
-
-with col1:
-    st.markdown("### 🔴 Port (SX)")
-    st.slider("Potenza (%)", 0, 100, key="p1")
-    ton1 = (st.session_state.p1 / 100) * 35
-    st.markdown(f"**Spinta: {ton1:.1f} ton**")
-    
-    st.slider("Azimut (°)", 0, 360, key="a1")
-    
-    # Orologio SX
-    fig_g1, ax_g1 = plt.subplots(figsize=(2, 2), subplot_kw={'projection': 'polar'})
-    ax_g1.set_theta_zero_location('N')
-    ax_g1.set_theta_direction(-1)
-    ax_g1.set_yticks([])
-    ax_g1.set_xticks(np.radians([0, 90, 180, 270]))
-    ax_g1.set_xticklabels(['0', '90', '180', '270'], fontsize=8)
-    ax_g1.arrow(np.radians(st.session_state.a1), 0, 0, 0.9, color='red', width=0.15, head_width=0, length_includes_head=True)
-    ax_g1.grid(True, alpha=0.3)
-    st.pyplot(fig_g1, use_container_width=False)
-
-with col2:
-    st.markdown("### 🟢 Starboard (DX)")
-    st.slider("Potenza (%)", 0, 100, key="p2")
-    ton2 = (st.session_state.p2 / 100) * 35
-    st.markdown(f"**Spinta: {ton2:.1f} ton**")
-    
-    st.slider("Azimut (°)", 0, 360, key="a2")
-    
-    # Orologio DX
-    fig_g2, ax_g2 = plt.subplots(figsize=(2, 2), subplot_kw={'projection': 'polar'})
-    ax_g2.set_theta_zero_location('N')
-    ax_g2.set_theta_direction(-1)
-    ax_g2.set_yticks([])
-    ax_g2.set_xticks(np.radians([0, 90, 180, 270]))
-    ax_g2.set_xticklabels(['0', '90', '180', '270'], fontsize=8)
-    ax_g2.arrow(np.radians(st.session_state.a2), 0, 0, 0.9, color='green', width=0.15, head_width=0, length_includes_head=True)
-    ax_g2.grid(True, alpha=0.3)
-    st.pyplot(fig_g2, use_container_width=False)
-
-# --- CALCOLI FISICI ---
+# --- CALCOLI FISICI (Eseguiti prima della grafica) ---
 pos_sx = np.array([-2.7, -12.0])
 pos_dx = np.array([2.7, -12.0])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
+
+# Calcolo Tonnellate
+ton1 = (st.session_state.p1 / 100) * 35
+ton2 = (st.session_state.p2 / 100) * 35
 
 # Vettori Componenti
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
@@ -128,6 +75,18 @@ M_dx = r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]
 Total_Moment = M_sx + M_dx
 
 # Logica Punto Applicazione
+def intersect_lines(p1, angle1_deg, p2, angle2_deg):
+    th1 = np.radians(90 - angle1_deg)
+    th2 = np.radians(90 - angle2_deg)
+    v1 = np.array([np.cos(th1), np.sin(th1)])
+    v2 = np.array([np.cos(th2), np.sin(th2)])
+    matrix = np.column_stack((v1, -v2))
+    delta = p2 - p1
+    if abs(np.linalg.det(matrix)) < 1e-4:
+        return None
+    t = np.linalg.solve(matrix, delta)[0]
+    return p1 + t * v1
+
 intersection = None
 if ton1 > 0.1 and ton2 > 0.1:
     intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -143,11 +102,66 @@ elif ton1 + ton2 > 0.1:
     origin_res = np.array([w_x, -12.0])
     logic_used = "B (Media)"
 
-# --- Visualizzazione Grafico ---
-st.divider()
-col_graph, col_data = st.columns([2, 1])
 
-with col_graph:
+# --- LAYOUT A COLONNE (PLANCIA) ---
+col_sx, col_center, col_dx = st.columns([1, 2, 1], gap="medium")
+
+# ================= COLONNA SINISTRA (PORT) =================
+with col_sx:
+    st.markdown("<h3 style='text-align: center; color: #ff4b4b;'>PORT (SX)</h3>", unsafe_allow_html=True)
+    
+    st.slider("Potenza SX (%)", 0, 100, key="p1")
+    st.metric("Spinta SX", f"{ton1:.1f} t")
+    
+    st.slider("Azimut SX (°)", 0, 360, key="a1")
+    
+    # Orologio SX
+    fig_g1, ax_g1 = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
+    ax_g1.set_theta_zero_location('N')
+    ax_g1.set_theta_direction(-1)
+    ax_g1.set_yticks([])
+    ax_g1.set_xticks(np.radians([0, 90, 180, 270]))
+    ax_g1.set_xticklabels(['0', '90', '180', '270'])
+    ax_g1.arrow(np.radians(st.session_state.a1), 0, 0, 0.9, color='red', width=0.15, head_width=0, length_includes_head=True)
+    ax_g1.grid(True, alpha=0.3)
+    # Background trasparente per estetica
+    fig_g1.patch.set_alpha(0)
+    st.pyplot(fig_g1, use_container_width=False)
+
+
+# ================= COLONNA DESTRA (STARBOARD) =================
+with col_dx:
+    st.markdown("<h3 style='text-align: center; color: #4CAF50;'>STBD (DX)</h3>", unsafe_allow_html=True)
+    
+    st.slider("Potenza DX (%)", 0, 100, key="p2")
+    st.metric("Spinta DX", f"{ton2:.1f} t")
+    
+    st.slider("Azimut DX (°)", 0, 360, key="a2")
+    
+    # Orologio DX
+    fig_g2, ax_g2 = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
+    ax_g2.set_theta_zero_location('N')
+    ax_g2.set_theta_direction(-1)
+    ax_g2.set_yticks([])
+    ax_g2.set_xticks(np.radians([0, 90, 180, 270]))
+    ax_g2.set_xticklabels(['0', '90', '180', '270'])
+    ax_g2.arrow(np.radians(st.session_state.a2), 0, 0, 0.9, color='green', width=0.15, head_width=0, length_includes_head=True)
+    ax_g2.grid(True, alpha=0.3)
+    fig_g2.patch.set_alpha(0)
+    st.pyplot(fig_g2, use_container_width=False)
+
+
+# ================= COLONNA CENTRALE (GRAFICA & PP) =================
+with col_center:
+    # 1. Controlli Pivot Point (messi sopra il grafico per immediatezza)
+    with st.expander("📍 Configurazione Pivot Point", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", help="Positivo = Verso Prua")
+        with c2:
+            st.slider("Trasversale (X)", -5.0, 5.0, key="pp_x")
+
+    # 2. Grafico Principale
     fig, ax = plt.subplots(figsize=(8, 10))
     
     # --- DISEGNO SCAFO ---
@@ -157,54 +171,35 @@ with col_graph:
     shoulder = 5.0  # Dove inizia la curva di prua
     
     verts = [
-        (-hw, stern),       # Poppa SX
-        (hw, stern),        # Poppa DX
-        (hw, shoulder),     # Spalla DX
-        (0, bow_tip),       # Punta Prua
-        (-hw, shoulder),    # Spalla SX
-        (-hw, stern)        # Chiudi su Poppa SX
+        (-hw, stern), (hw, stern), (hw, shoulder), 
+        (0, bow_tip), (-hw, shoulder), (-hw, stern)
     ]
-    
-    codes = [
-        Path.MOVETO,
-        Path.LINETO,
-        Path.LINETO,
-        Path.CURVE3, # Curva Prua DX
-        Path.CURVE3, # Curva Prua SX
-        Path.LINETO
-    ]
-    
+    codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.CURVE3, Path.CURVE3, Path.LINETO]
     path = Path(verts, codes)
     patch = PathPatch(path, facecolor='#cccccc', edgecolor='#404040', lw=3, zorder=1)
     ax.add_patch(patch)
     
-    # 2. Pivot Point
+    # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 3. Visualizzazione MOMENTO (Freccia Viola)
+    # Momento (Freccia Viola)
     if abs(Total_Moment) > 10:
-        arc_color = '#800080' # Purple
-        radius = 8.5 
+        arc_color = '#800080'
+        radius = 9.0 
+        style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
         
-        if Total_Moment > 0: # Accosta SX
-            style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
-            ax.add_patch(FancyArrowPatch((st.session_state.pp_x + radius, st.session_state.pp_y - 3), 
-                                         (st.session_state.pp_x + radius, st.session_state.pp_y + 3),
-                                         connectionstyle="arc3,rad=.3", 
-                                         arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
-        else: # Accosta DX
-            style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
-            ax.add_patch(FancyArrowPatch((st.session_state.pp_x - radius, st.session_state.pp_y - 3), 
-                                         (st.session_state.pp_x - radius, st.session_state.pp_y + 3),
-                                         connectionstyle="arc3,rad=-.3", 
-                                         arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
+        # Logica per disegnare l'arco a destra o sinistra
+        start_x = st.session_state.pp_x + (radius if Total_Moment > 0 else -radius)
+        connection = "arc3,rad=.3" if Total_Moment > 0 else "arc3,rad=-.3"
+        
+        ax.add_patch(FancyArrowPatch((start_x, st.session_state.pp_y - 3), 
+                                     (start_x, st.session_state.pp_y + 3),
+                                     connectionstyle=connection, 
+                                     arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
 
-    # 4. Motori e Vettori
-    ax.scatter([pos_sx[0], pos_dx[0]], [pos_sx[1], pos_dx[1]], c='#555555', s=80, zorder=3)
-    scale = 0.4
-    
     # Motori
+    scale = 0.4
     ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
 
@@ -213,36 +208,31 @@ with col_graph:
     ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, 
              head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
 
-    # Linee tratteggiate intersezione (Ecco la riga corretta!)
+    # Linee tratteggiate intersezione
     if logic_used == "C (Intersezione)" and abs(origin_res[1]) < 40:
         ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
 
     # SETUP ASSI
-    ax.set_xlim(-25, 25)
-    ax.set_ylim(-30, 30)
+    ax.set_xlim(-20, 20)
+    ax.set_ylim(-25, 25)
     ax.set_aspect('equal')
     ax.axis('off') 
     
     st.pyplot(fig)
-
-with col_data:
+    
+    # 3. Analisi Dinamica (Sotto il grafico, centrata)
     st.markdown("### 📊 Analisi Dinamica")
-    st.metric("Tiro Risultante", f"{res_ton:.1f} ton")
+    m1, m2, m3 = st.columns(3)
     
     deg_res = np.degrees(np.arctan2(res_u, res_v))
     if deg_res < 0: deg_res += 360
-    st.metric("Direzione Spinta", f"{deg_res:.0f}°")
     
-    st.write("---")
+    m1.metric("Tiro Totale", f"{res_ton:.1f} t")
+    m2.metric("Direzione", f"{deg_res:.0f}°")
     
+    dir_rot = "STABILE"
     if abs(Total_Moment) > 20:
-        dir_rot = "SINISTRA" if Total_Moment > 0 else "DRITTA"
-        st.markdown(f"**Rotazione:** {dir_rot}")
-        st.caption(f"Momento: **{abs(Total_Moment):.0f} kNm**")
-    else:
-        st.markdown("**Rotazione:** Stabile")
-        st.caption("Momento trascurabile")
-        
-    st.write("---")
-    st.caption("Legenda: 🟣 Rotazione | 🔵 Risultante | ⚫ Pivot Point")
+        dir_rot = "SINISTRA (Antiorario)" if Total_Moment > 0 else "DRITTA (Orario)"
+    
+    m3.metric("Rotazione", dir_rot, delta=f"{abs(Total_Moment):.0f} kNm", delta_color="off")
