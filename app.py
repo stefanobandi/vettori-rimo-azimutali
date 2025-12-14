@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import PathPatch, FancyArrowPatch
+from matplotlib.patches import PathPatch, FancyArrowPatch, Circle
 from matplotlib.path import Path
 
 # --- GESTIONE SESSION STATE (Memoria) ---
@@ -27,7 +27,7 @@ def reset_pp():
     st.session_state.pp_y = 5.42
 
 # --- Configurazione Pagina ---
-st.set_page_config(page_title="ASD Centurion V5", layout="wide")
+st.set_page_config(page_title="ASD Centurion Fix", layout="wide")
 
 # --- Titolo e Dati Nave ---
 st.title("⚓ Rimorchiatore ASD 'CENTURION'")
@@ -148,79 +148,73 @@ st.divider()
 col_graph, col_data = st.columns([2, 1])
 
 with col_graph:
-    fig, ax = plt.subplots(figsize=(6, 8)) # Aspect ratio ottimizzato per la forma nave
+    # Dimensioni fisse per garantire che lo scafo entri
+    fig, ax = plt.subplots(figsize=(8, 10))
     
-    # 1. DISEGNO SCAFO "FULLER" (Più massiccio)
-    hw = 5.85     # Metà larghezza
-    stern = -16.25
-    bow = 16.25
-    
-    # Modifica: Allarghiamo le spalle. Il tratto dritto arriva più avanti (fino a Y=8 invece che 0)
-    # Questo lo rende visivamente meno "lungo"
-    shoulder_y = 9.0 
+    # --- DISEGNO SCAFO "BULLET PROOF" ---
+    # Usiamo una geometria più semplice ma efficace per evitare errori di render
+    hw = 5.85       # Half Width
+    stern = -16.25  # Y Poppa
+    bow_tip = 16.25 # Y Punta Prua
+    shoulder = 5.0  # Dove inizia la curva di prua
     
     verts = [
-        (-hw, stern),      # Poppa SX
-        (0, stern - 0.5),  # Centro Poppa leggermente curvo
-        (hw, stern),       # Poppa DX
-        (hw, shoulder_y),  # Lato DX dritto fino alle spalle
-        (hw, 13.5),        # Control point curva 1 (più largo)
-        (3.5, bow),        # Control point curva 2 (più piatto)
-        (0, bow),          # Punta Prua
-        (-3.5, bow),       # Simmetrico SX
-        (-hw, 13.5),       # Simmetrico SX
-        (-hw, shoulder_y), # Lato SX dritto
-        (-hw, stern)       # Chiudi
+        (-hw, stern),       # Poppa SX
+        (hw, stern),        # Poppa DX
+        (hw, shoulder),     # Spalla DX
+        (0, bow_tip),       # Punta Prua
+        (-hw, shoulder),    # Spalla SX
+        (-hw, stern)        # Chiudi su Poppa SX
     ]
     
     codes = [
         Path.MOVETO,
-        Path.CURVE3, # Poppa
-        Path.CURVE3,
-        Path.LINETO, # Lato DX
-        Path.CURVE4, # Prua DX
-        Path.CURVE4,
-        Path.CURVE4, # Punta
-        Path.CURVE4,
-        Path.CURVE4,
-        Path.LINETO, # Lato SX
-        Path.LINETO  # Chiudi
+        Path.LINETO,
+        Path.LINETO,
+        Path.CURVE3, # Curva quadratica verso la punta (più semplice di Bezier cubica)
+        Path.CURVE3, # Curva quadratica ritorno
+        Path.LINETO
     ]
     
-    # Scafo Grigio Pulito (Senza ponte bianco)
-    patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#404040', lw=2, zorder=1)
+    path = Path(verts, codes)
+    patch = PathPatch(path, facecolor='#cccccc', edgecolor='#404040', lw=3, zorder=1)
     ax.add_patch(patch)
-
+    
     # 2. Pivot Point
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=100, zorder=10)
-    ax.text(st.session_state.pp_x + 0.5, st.session_state.pp_y, "PP", fontsize=10, weight='bold', zorder=10)
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 3. Visualizzazione MOMENTO (Solo Freccia Viola)
+    # 3. Visualizzazione MOMENTO (Freccia Viola)
     if abs(Total_Moment) > 10:
-        # Freccia viola curva
         arc_color = '#800080' # Purple
-        radius = 7
+        radius = 8.5 # Raggio leggermente più largo dello scafo
         
-        # Disegniamo la freccia laterale per indicare rotazione
+        # Disegniamo la freccia laterale
         if Total_Moment > 0: # Accosta SX (Antiorario)
-            # Freccia sul lato sinistro che punta indietro/ruota
             style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
-            ax.add_patch(FancyArrowPatch((st.session_state.pp_x + radius, st.session_state.pp_y - 2), 
-                                         (st.session_state.pp_x + radius, st.session_state.pp_y + 2),
+            ax.add_patch(FancyArrowPatch((st.session_state.pp_x + radius, st.session_state.pp_y - 3), 
+                                         (st.session_state.pp_x + radius, st.session_state.pp_y + 3),
                                          connectionstyle="arc3,rad=.3", 
-                                         arrowstyle=style, color=arc_color, alpha=0.7, zorder=5))
+                                         arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
         else: # Accosta DX (Orario)
             style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
-            ax.add_patch(FancyArrowPatch((st.session_state.pp_x - radius, st.session_state.pp_y - 2), 
-                                         (st.session_state.pp_x - radius, st.session_state.pp_y + 2),
+            ax.add_patch(FancyArrowPatch((st.session_state.pp_x - radius, st.session_state.pp_y - 3), 
+                                         (st.session_state.pp_x - radius, st.session_state.pp_y + 3),
                                          connectionstyle="arc3,rad=-.3", 
-                                         arrowstyle=style, color=arc_color, alpha=0.7, zorder=5))
+                                         arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
 
     # 4. Motori e Vettori
-    ax.scatter([pos_sx[0], pos_dx[0]], [pos_sx[1], pos_dx[1]], c='#555555', s=60, zorder=3)
+    ax.scatter([pos_sx[0], pos_dx[0]], [pos_sx[1], pos_dx[1]], c='#555555', s=80, zorder=3)
     scale = 0.4
     
+    # Motori
     ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
 
-    # Risult
+    # Risultante
+    ax.scatter(origin_res[0], origin_res[1], c='blue', s=40, marker='x', zorder=4)
+    ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, 
+             head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
+
+    # Linee tratteggiate intersezione
+    if logic_used == "C (Intersezione)" and abs(origin_res[1])
