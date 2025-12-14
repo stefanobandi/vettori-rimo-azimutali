@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import PathPatch, FancyArrowPatch, Circle
+from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- GESTIONE SESSION STATE (Memoria) ---
@@ -27,7 +27,7 @@ def reset_pp():
     st.session_state.pp_y = 5.42
 
 # --- Configurazione Pagina ---
-st.set_page_config(page_title="ASD Centurion Fix", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.2", layout="wide")
 
 # --- Titolo e Dati Nave ---
 st.title("⚓ Rimorchiatore ASD 'CENTURION'")
@@ -148,11 +148,9 @@ st.divider()
 col_graph, col_data = st.columns([2, 1])
 
 with col_graph:
-    # Dimensioni fisse per garantire che lo scafo entri
     fig, ax = plt.subplots(figsize=(8, 10))
     
-    # --- DISEGNO SCAFO "BULLET PROOF" ---
-    # Usiamo una geometria più semplice ma efficace per evitare errori di render
+    # --- DISEGNO SCAFO ---
     hw = 5.85       # Half Width
     stern = -16.25  # Y Poppa
     bow_tip = 16.25 # Y Punta Prua
@@ -171,8 +169,8 @@ with col_graph:
         Path.MOVETO,
         Path.LINETO,
         Path.LINETO,
-        Path.CURVE3, # Curva quadratica verso la punta (più semplice di Bezier cubica)
-        Path.CURVE3, # Curva quadratica ritorno
+        Path.CURVE3, # Curva Prua DX
+        Path.CURVE3, # Curva Prua SX
         Path.LINETO
     ]
     
@@ -187,16 +185,15 @@ with col_graph:
     # 3. Visualizzazione MOMENTO (Freccia Viola)
     if abs(Total_Moment) > 10:
         arc_color = '#800080' # Purple
-        radius = 8.5 # Raggio leggermente più largo dello scafo
+        radius = 8.5 
         
-        # Disegniamo la freccia laterale
-        if Total_Moment > 0: # Accosta SX (Antiorario)
+        if Total_Moment > 0: # Accosta SX
             style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
             ax.add_patch(FancyArrowPatch((st.session_state.pp_x + radius, st.session_state.pp_y - 3), 
                                          (st.session_state.pp_x + radius, st.session_state.pp_y + 3),
                                          connectionstyle="arc3,rad=.3", 
                                          arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
-        else: # Accosta DX (Orario)
+        else: # Accosta DX
             style = f"Simple, tail_width={min(3, abs(Total_Moment)/200)}, head_width=8, head_length=8"
             ax.add_patch(FancyArrowPatch((st.session_state.pp_x - radius, st.session_state.pp_y - 3), 
                                          (st.session_state.pp_x - radius, st.session_state.pp_y + 3),
@@ -216,5 +213,36 @@ with col_graph:
     ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, 
              head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
 
-    # Linee tratteggiate intersezione
-    if logic_used == "C (Intersezione)" and abs(origin_res[1])
+    # Linee tratteggiate intersezione (Ecco la riga corretta!)
+    if logic_used == "C (Intersezione)" and abs(origin_res[1]) < 40:
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
+
+    # SETUP ASSI
+    ax.set_xlim(-25, 25)
+    ax.set_ylim(-30, 30)
+    ax.set_aspect('equal')
+    ax.axis('off') 
+    
+    st.pyplot(fig)
+
+with col_data:
+    st.markdown("### 📊 Analisi Dinamica")
+    st.metric("Tiro Risultante", f"{res_ton:.1f} ton")
+    
+    deg_res = np.degrees(np.arctan2(res_u, res_v))
+    if deg_res < 0: deg_res += 360
+    st.metric("Direzione Spinta", f"{deg_res:.0f}°")
+    
+    st.write("---")
+    
+    if abs(Total_Moment) > 20:
+        dir_rot = "SINISTRA" if Total_Moment > 0 else "DRITTA"
+        st.markdown(f"**Rotazione:** {dir_rot}")
+        st.caption(f"Momento: **{abs(Total_Moment):.0f} kNm**")
+    else:
+        st.markdown("**Rotazione:** Stabile")
+        st.caption("Momento trascurabile")
+        
+    st.write("---")
+    st.caption("Legenda: 🟣 Rotazione | 🔵 Risultante | ⚫ Pivot Point")
