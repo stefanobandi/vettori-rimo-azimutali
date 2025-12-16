@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.15", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.16", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -21,12 +21,18 @@ for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# --- FUNZIONI DI PRESET (MANOVRE) ---
+# --- FUNZIONI DI GESTIONE STATO ---
 def set_engine_state(p1, a1, p2, a2):
     st.session_state.p1 = p1
     st.session_state.a1 = a1
     st.session_state.p2 = p2
     st.session_state.a2 = a2
+
+def reset_engines():
+    st.session_state.p1 = 50
+    st.session_state.a1 = 0
+    st.session_state.p2 = 50
+    st.session_state.a2 = 0
 
 def reset_pivot():
     st.session_state.pp_x = 0.0
@@ -38,7 +44,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.15 (Custom Side Step Presets)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.16 (Reset Separati + Custom Vectors)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -48,11 +54,13 @@ st.write("---")
 with st.sidebar:
     st.header("Comandi Globali")
     
-    # 1. Reset Base
+    # 1. Reset Separati
     st.markdown("### 🔄 Reset")
-    if st.button("Riporta i parametri al valore di default", type="primary", use_container_width=True):
-        set_engine_state(50, 0, 50, 0)
-        reset_pivot()
+    col_res1, col_res2 = st.columns(2)
+    with col_res1:
+        st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
+    with col_res2:
+        st.button("Reset Pivot", on_click=reset_pivot, use_container_width=True)
     
     st.markdown("---")
     
@@ -71,13 +79,13 @@ with st.sidebar:
     # 3. Preset Laterali (Side Step Custom)
     st.markdown("### ↔️ Traslazioni (Side Step)")
     
-    # Slow Side Step DRITTA (Richiesta Utente)
+    # Slow Side Step DRITTA
     # SX: 009° / 25% | DX: 171° / 25%
     st.button("Slow Side Step DRITTA", on_click=set_engine_state, args=(25, 9, 25, 171), use_container_width=True)
     
-    # Slow Side Step SINISTRA (Richiesta Utente)
-    # SX: 171° / 25% | DX: 009° / 25%
-    st.button("Slow Side Step SINISTRA", on_click=set_engine_state, args=(25, 171, 25, 9), use_container_width=True)
+    # Slow Side Step SINISTRA (Aggiornato V5.16)
+    # SX: 189° / 25% | DX: 351° / 25%
+    st.button("Slow Side Step SINISTRA", on_click=set_engine_state, args=(25, 189, 25, 351), use_container_width=True)
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
