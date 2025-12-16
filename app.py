@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.12", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.13", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -14,7 +14,7 @@ G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
     "p2": 50, "a2": 0,    # Motore DX
-    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default (Centro di resistenza laterale standard)
+    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default
 }
 
 for key, val in defaults.items():
@@ -38,7 +38,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.12 (Hull Geometry Fix)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.13 (Clean Fender Design)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -57,11 +57,11 @@ pos_sx = np.array([-2.7, -12.0])
 pos_dx = np.array([2.7, -12.0])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
-# Tonnellate (Forza)
+# Tonnellate
 ton1 = (st.session_state.p1 / 100) * 35
 ton2 = (st.session_state.p2 / 100) * 35
 
-# Vettori Componenti
+# Vettori
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 u1, v1 = ton1 * np.sin(rad1), ton1 * np.cos(rad1)
 u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
@@ -69,12 +69,12 @@ u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
 F_sx = np.array([u1, v1])
 F_dx = np.array([u2, v2])
 
-# Risultante (Traslazione)
+# Risultante
 res_u = u1 + u2
 res_v = v1 + v2
 res_ton = np.sqrt(res_u**2 + res_v**2)
 
-# Momento (Rotazione)
+# Momento
 r_sx = pos_sx - pp_pos
 r_dx = pos_dx - pp_pos
 
@@ -83,7 +83,7 @@ M_dx_tm = r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]
 Total_Moment_tm = M_sx_tm + M_dx_tm
 Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
-# Intersezione Vettoriale
+# Intersezione
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1 = np.radians(90 - angle1_deg)
     th2 = np.radians(90 - angle2_deg)
@@ -126,7 +126,7 @@ def plot_clock(azimuth_deg, color):
     fig.patch.set_alpha(0)
     return fig
 
-# === PORT (SX) ===
+# === PORT ===
 with col_sx:
     st.markdown("<h3 style='text-align: center; color: #ff4b4b;'>PORT (SX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza SX (%)", 0, 100, step=1, key="p1")
@@ -136,7 +136,7 @@ with col_sx:
     st.pyplot(fig_sx, use_container_width=False)
     plt.close(fig_sx)
 
-# === STBD (DX) ===
+# === STBD ===
 with col_dx:
     st.markdown("<h3 style='text-align: center; color: #4CAF50;'>STBD (DX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza DX (%)", 0, 100, step=1, key="p2")
@@ -146,7 +146,7 @@ with col_dx:
     st.pyplot(fig_dx, use_container_width=False)
     plt.close(fig_dx)
 
-# === CENTER (GRAFICA) ===
+# === CENTER ===
 with col_center:
     with st.expander("📍 Configurazione Pivot Point", expanded=True):
         c1, c2 = st.columns(2)
@@ -155,106 +155,64 @@ with col_center:
 
     fig, ax = plt.subplots(figsize=(8, 10))
     
-    # --- 1. DISEGNO SCAFO (CORRETTO) ---
-    # Geometria
+    # 1. DISEGNO SCAFO & FENDER
     hw = 5.85        # Half Width
     stern = -16.25   # Poppa
-    bow_tip = 16.25  # Punta estrema prua
-    shoulder = 10.0  # Inizio curvatura prua (spalle)
+    bow_tip = 16.25  # Punta
+    shoulder = 8.0   # Inizio curvatura (spalle) - spostato per renderla più dolce
+
+    # Punti di controllo per la curva di Bezier (Prua Tonda)
+    # Sequenza: MoveTo -> LineTo -> Curve4 -> Close
     
-    # Vertici (Senso antiorario partendo da poppa SX)
-    # Usiamo Curve3 (Quadratic Bezier) in modo esplicito: Start -> Control -> End
-    # Per Matplotlib Path, la sequenza è: MoveTo, LineTo, ... Curve3 (control), Curve3 (end)
-    
-    verts = [
-        (-hw, stern),       # 1. Poppa SX
-        (hw, stern),        # 2. Poppa DX
-        (hw, shoulder),     # 3. Spalla DX
-        (hw, bow_tip),      # 4. Control point curva DX (l'angolo)
-        (0, bow_tip),       # 5. Punta Prua
-        (-hw, bow_tip),     # 6. Control point curva SX (l'angolo)
-        (-hw, shoulder),    # 7. Spalla SX
-        (-hw, stern),       # 8. Poppa SX (Chiusura)
-    ]
-    
-    codes = [
-        Path.MOVETO,
-        Path.LINETO,
-        Path.LINETO,
-        Path.CURVE3, # Controllo per arrivare a punta
-        Path.CURVE3, # Punta (EndPoint del segmento precedente? No, in MPL Curve3 usa il punto corrente come start, il prossimo come control, quello dopo come end)
-        # CORREZIONE LOGICA MPL:
-        # P1(Start), P2(Control), P3(End) -> Codes: MOVETO, CURVE3, CURVE3 ?? No.
-        # Codes: MOVETO, CURVE3 (Control), CURVE3 (End)? No.
-        # Standard semplice: Linee + Curve approssimate
-    ]
-    
-    # Riscriviamo il Path in modo più robusto usando Bezier Cubiche (Curve4) che sono più intuitive
-    verts = [
-        (-hw, stern),        # Start Poppa SX
-        (hw, stern),         # Line to Poppa DX
-        (hw, shoulder),      # Line to Spalla DX
-        (0, bow_tip),        # Curve to Punta (con controlli definiti sotto)
-        (-hw, shoulder),     # Curve to Spalla SX
-        (-hw, stern),        # Line to Poppa SX
-        (-hw, stern),        # Close
-    ]
-    
-    codes = [
-        Path.MOVETO,
-        Path.LINETO,
-        Path.LINETO,
-        Path.CURVE4, # Punta (richiede 2 control points prima, ma qui semplifichiamo con arc)
-        Path.CURVE4, 
-        Path.LINETO,
-        Path.CLOSEPOLY
-    ]
-    
-    # SOLUZIONE GEOMETRICA PULITA (Costruzione manuale del path)
-    # Costruiamo il path esplicito con punti di controllo precisi per una prua tonda
+    # Definiamo i vertici completi dello scafo
     path_data = [
         (Path.MOVETO, (-hw, stern)),
         (Path.LINETO, (hw, stern)),
         (Path.LINETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 15.0)),      # Control 1 DX
-        (Path.CURVE4, (3.0, bow_tip)),  # Control 2 DX
-        (Path.CURVE4, (0, bow_tip)),    # End Point Prua
-        (Path.CURVE4, (-3.0, bow_tip)), # Control 1 SX
-        (Path.CURVE4, (-hw, 15.0)),     # Control 2 SX
-        (Path.CURVE4, (-hw, shoulder)), # End Point Spalla SX
+        # Curva DX verso punta: (Control1, Control2, EndPoint)
+        (Path.CURVE4, (hw, 14.0)),      
+        (Path.CURVE4, (4.0, bow_tip)),  
+        (Path.CURVE4, (0, bow_tip)),    
+        # Curva SX verso spalla:
+        (Path.CURVE4, (-4.0, bow_tip)), 
+        (Path.CURVE4, (-hw, 14.0)),     
+        (Path.CURVE4, (-hw, shoulder)), 
+        # Chiusura
         (Path.LINETO, (-hw, stern)),
         (Path.CLOSEPOLY, (-hw, stern))
     ]
     codes, verts = zip(*path_data)
     
-    patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#404040', lw=3, zorder=1)
+    # Patch Scafo Base
+    patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1)
     ax.add_patch(patch)
     
-    # FENDER (Parabordo) - Ora solidale alla prua
-    # Rettangolo arrotondato o blocco solido sulla punta
-    fender_width = 4.0
-    fender_depth = 0.6
-    fender_y = bow_tip # Inizia esattamente sulla punta
-    
-    fender_verts = [
-        (-fender_width/2, fender_y),
-        (fender_width/2, fender_y),
-        (fender_width/2, fender_y + fender_depth),
-        (-fender_width/2, fender_y + fender_depth),
-        (-fender_width/2, fender_y)
+    # FENDER SIMULATO (SOLO BORDO SPESSO)
+    # Creiamo un percorso che segue SOLO la curvatura della prua
+    fender_data = [
+        (Path.MOVETO, (hw, shoulder)), # Start Spalla DX
+        (Path.CURVE4, (hw, 14.0)),      
+        (Path.CURVE4, (4.0, bow_tip)),  
+        (Path.CURVE4, (0, bow_tip)),   # Punta
+        (Path.CURVE4, (-4.0, bow_tip)), 
+        (Path.CURVE4, (-hw, 14.0)),     
+        (Path.CURVE4, (-hw, shoulder)), # End Spalla SX
     ]
-    fender_codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY]
-    f_patch = PathPatch(Path(fender_verts, fender_codes), facecolor='#333333', edgecolor='black', zorder=2)
-    ax.add_patch(f_patch)
+    f_codes, f_verts = zip(*fender_data)
     
+    # Disegniamo solo il contorno (fill=False) ma molto spesso (lw=8)
+    fender_patch = PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', 
+                             lw=8, capstyle='round', zorder=2)
+    ax.add_patch(fender_patch)
+
     # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # --- 2. FRECCIA MOMENTO ---
+    # 2. FRECCIA MOMENTO
     if abs(Total_Moment_tm) > 1:
         arc_color = '#800080'
-        arrow_y_pos = 24.0 # Alzata leggermente per non toccare il nuovo fender
+        arrow_y_pos = 24.0 
         
         if Total_Moment_tm > 0:
             p_start = (5.0, arrow_y_pos); p_end = (-5.0, arrow_y_pos); connection = "arc3,rad=0.3"
