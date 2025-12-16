@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.13", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.15", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -14,19 +14,19 @@ G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
     "p2": 50, "a2": 0,    # Motore DX
-    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default
+    "pp_x": 0.0, "pp_y": 5.42
 }
 
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# --- FUNZIONI DI RESET ---
-def reset_engines():
-    st.session_state.p1 = 50
-    st.session_state.a1 = 0
-    st.session_state.p2 = 50
-    st.session_state.a2 = 0
+# --- FUNZIONI DI PRESET (MANOVRE) ---
+def set_engine_state(p1, a1, p2, a2):
+    st.session_state.p1 = p1
+    st.session_state.a1 = a1
+    st.session_state.p2 = p2
+    st.session_state.a2 = a2
 
 def reset_pivot():
     st.session_state.pp_x = 0.0
@@ -38,19 +38,46 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.13 (Clean Fender Design)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.15 (Custom Side Step Presets)</span>
 </div>
 """, unsafe_allow_html=True)
 
 st.write("---")
 
-# --- SIDEBAR ---
+# --- SIDEBAR COMPLETA ---
 with st.sidebar:
     st.header("Comandi Globali")
+    
+    # 1. Reset Base
     st.markdown("### 🔄 Reset")
-    st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    st.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
-    st.info("Valori riportati ai parametri di default.")
+    if st.button("Riporta i parametri al valore di default", type="primary", use_container_width=True):
+        set_engine_state(50, 0, 50, 0)
+        reset_pivot()
+    
+    st.markdown("---")
+    
+    # 2. Preset Longitudinali
+    st.markdown("### ↕️ Longitudinali")
+    col_l1, col_l2 = st.columns(2)
+    with col_l1:
+        st.button("Tutta AVANTI", on_click=set_engine_state, args=(100, 0, 100, 0), use_container_width=True)
+        st.button("Mezza INDIETRO", on_click=set_engine_state, args=(50, 180, 50, 180), use_container_width=True)
+    with col_l2:
+        st.button("Mezza AVANTI", on_click=set_engine_state, args=(50, 0, 50, 0), use_container_width=True)
+        st.button("Tutta INDIETRO", on_click=set_engine_state, args=(100, 180, 100, 180), use_container_width=True)
+
+    st.markdown("---")
+
+    # 3. Preset Laterali (Side Step Custom)
+    st.markdown("### ↔️ Traslazioni (Side Step)")
+    
+    # Slow Side Step DRITTA (Richiesta Utente)
+    # SX: 009° / 25% | DX: 171° / 25%
+    st.button("Slow Side Step DRITTA", on_click=set_engine_state, args=(25, 9, 25, 171), use_container_width=True)
+    
+    # Slow Side Step SINISTRA (Richiesta Utente)
+    # SX: 171° / 25% | DX: 009° / 25%
+    st.button("Slow Side Step SINISTRA", on_click=set_engine_state, args=(25, 171, 25, 9), use_container_width=True)
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
@@ -155,54 +182,29 @@ with col_center:
 
     fig, ax = plt.subplots(figsize=(8, 10))
     
-    # 1. DISEGNO SCAFO & FENDER
-    hw = 5.85        # Half Width
-    stern = -16.25   # Poppa
-    bow_tip = 16.25  # Punta
-    shoulder = 8.0   # Inizio curvatura (spalle) - spostato per renderla più dolce
+    # 1. DISEGNO SCAFO & FENDER (V5.13 Design)
+    hw = 5.85; stern = -16.25; bow_tip = 16.25; shoulder = 8.0
 
-    # Punti di controllo per la curva di Bezier (Prua Tonda)
-    # Sequenza: MoveTo -> LineTo -> Curve4 -> Close
-    
-    # Definiamo i vertici completi dello scafo
     path_data = [
         (Path.MOVETO, (-hw, stern)),
         (Path.LINETO, (hw, stern)),
         (Path.LINETO, (hw, shoulder)),
-        # Curva DX verso punta: (Control1, Control2, EndPoint)
-        (Path.CURVE4, (hw, 14.0)),      
-        (Path.CURVE4, (4.0, bow_tip)),  
-        (Path.CURVE4, (0, bow_tip)),    
-        # Curva SX verso spalla:
-        (Path.CURVE4, (-4.0, bow_tip)), 
-        (Path.CURVE4, (-hw, 14.0)),     
-        (Path.CURVE4, (-hw, shoulder)), 
-        # Chiusura
-        (Path.LINETO, (-hw, stern)),
-        (Path.CLOSEPOLY, (-hw, stern))
+        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
+        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
+        (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
     ]
     codes, verts = zip(*path_data)
-    
-    # Patch Scafo Base
     patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1)
     ax.add_patch(patch)
     
-    # FENDER SIMULATO (SOLO BORDO SPESSO)
-    # Creiamo un percorso che segue SOLO la curvatura della prua
+    # Fender (Solo contorno spesso)
     fender_data = [
-        (Path.MOVETO, (hw, shoulder)), # Start Spalla DX
-        (Path.CURVE4, (hw, 14.0)),      
-        (Path.CURVE4, (4.0, bow_tip)),  
-        (Path.CURVE4, (0, bow_tip)),   # Punta
-        (Path.CURVE4, (-4.0, bow_tip)), 
-        (Path.CURVE4, (-hw, 14.0)),     
-        (Path.CURVE4, (-hw, shoulder)), # End Spalla SX
+        (Path.MOVETO, (hw, shoulder)),
+        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),   
+        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
     ]
     f_codes, f_verts = zip(*fender_data)
-    
-    # Disegniamo solo il contorno (fill=False) ma molto spesso (lw=8)
-    fender_patch = PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', 
-                             lw=8, capstyle='round', zorder=2)
+    fender_patch = PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2)
     ax.add_patch(fender_patch)
 
     # Pivot Point
