@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.11", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.12", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -14,7 +14,7 @@ G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
     "p2": 50, "a2": 0,    # Motore DX
-    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default
+    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point default (Centro di resistenza laterale standard)
 }
 
 for key, val in defaults.items():
@@ -38,19 +38,19 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.11 (Stable + Dual Units)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.12 (Hull Geometry Fix)</span>
 </div>
 """, unsafe_allow_html=True)
 
 st.write("---")
 
-# --- SIDEBAR (Solo Reset) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Comandi Globali")
     st.markdown("### 🔄 Reset")
     st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
     st.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
-    st.info("Usa i tasti sopra per riportare i valori ai parametri di default.")
+    st.info("Valori riportati ai parametri di default.")
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
@@ -75,17 +75,12 @@ res_v = v1 + v2
 res_ton = np.sqrt(res_u**2 + res_v**2)
 
 # Momento (Rotazione)
-# r = distanza braccio (metri)
 r_sx = pos_sx - pp_pos
 r_dx = pos_dx - pp_pos
 
-# Momento = r x F (in 2D: rx*Fy - ry*Fx)
-# Unità risultante: Tonnellate * Metri = tm
 M_sx_tm = r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]
 M_dx_tm = r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]
 Total_Moment_tm = M_sx_tm + M_dx_tm
-
-# Conversione in kNm
 Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
 # Intersezione Vettoriale
@@ -139,7 +134,7 @@ with col_sx:
     st.slider("Azimut SX (°)", 0, 360, step=1, key="a1")
     fig_sx = plot_clock(st.session_state.a1, 'red')
     st.pyplot(fig_sx, use_container_width=False)
-    plt.close(fig_sx) # Pulizia memoria
+    plt.close(fig_sx)
 
 # === STBD (DX) ===
 with col_dx:
@@ -149,7 +144,7 @@ with col_dx:
     st.slider("Azimut DX (°)", 0, 360, step=1, key="a2")
     fig_dx = plot_clock(st.session_state.a2, 'green')
     st.pyplot(fig_dx, use_container_width=False)
-    plt.close(fig_dx) # Pulizia memoria
+    plt.close(fig_dx)
 
 # === CENTER (GRAFICA) ===
 with col_center:
@@ -160,46 +155,114 @@ with col_center:
 
     fig, ax = plt.subplots(figsize=(8, 10))
     
-    # 1. DISEGNO SCAFO
-    hw = 5.85; stern = -16.25; bow_tip = 16.25; shoulder = 5.0
-    verts = [(-hw, stern), (hw, stern), (hw, shoulder), (0, bow_tip), (-hw, shoulder), (-hw, stern)]
-    codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.CURVE3, Path.CURVE3, Path.LINETO]
+    # --- 1. DISEGNO SCAFO (CORRETTO) ---
+    # Geometria
+    hw = 5.85        # Half Width
+    stern = -16.25   # Poppa
+    bow_tip = 16.25  # Punta estrema prua
+    shoulder = 10.0  # Inizio curvatura prua (spalle)
+    
+    # Vertici (Senso antiorario partendo da poppa SX)
+    # Usiamo Curve3 (Quadratic Bezier) in modo esplicito: Start -> Control -> End
+    # Per Matplotlib Path, la sequenza è: MoveTo, LineTo, ... Curve3 (control), Curve3 (end)
+    
+    verts = [
+        (-hw, stern),       # 1. Poppa SX
+        (hw, stern),        # 2. Poppa DX
+        (hw, shoulder),     # 3. Spalla DX
+        (hw, bow_tip),      # 4. Control point curva DX (l'angolo)
+        (0, bow_tip),       # 5. Punta Prua
+        (-hw, bow_tip),     # 6. Control point curva SX (l'angolo)
+        (-hw, shoulder),    # 7. Spalla SX
+        (-hw, stern),       # 8. Poppa SX (Chiusura)
+    ]
+    
+    codes = [
+        Path.MOVETO,
+        Path.LINETO,
+        Path.LINETO,
+        Path.CURVE3, # Controllo per arrivare a punta
+        Path.CURVE3, # Punta (EndPoint del segmento precedente? No, in MPL Curve3 usa il punto corrente come start, il prossimo come control, quello dopo come end)
+        # CORREZIONE LOGICA MPL:
+        # P1(Start), P2(Control), P3(End) -> Codes: MOVETO, CURVE3, CURVE3 ?? No.
+        # Codes: MOVETO, CURVE3 (Control), CURVE3 (End)? No.
+        # Standard semplice: Linee + Curve approssimate
+    ]
+    
+    # Riscriviamo il Path in modo più robusto usando Bezier Cubiche (Curve4) che sono più intuitive
+    verts = [
+        (-hw, stern),        # Start Poppa SX
+        (hw, stern),         # Line to Poppa DX
+        (hw, shoulder),      # Line to Spalla DX
+        (0, bow_tip),        # Curve to Punta (con controlli definiti sotto)
+        (-hw, shoulder),     # Curve to Spalla SX
+        (-hw, stern),        # Line to Poppa SX
+        (-hw, stern),        # Close
+    ]
+    
+    codes = [
+        Path.MOVETO,
+        Path.LINETO,
+        Path.LINETO,
+        Path.CURVE4, # Punta (richiede 2 control points prima, ma qui semplifichiamo con arc)
+        Path.CURVE4, 
+        Path.LINETO,
+        Path.CLOSEPOLY
+    ]
+    
+    # SOLUZIONE GEOMETRICA PULITA (Costruzione manuale del path)
+    # Costruiamo il path esplicito con punti di controllo precisi per una prua tonda
+    path_data = [
+        (Path.MOVETO, (-hw, stern)),
+        (Path.LINETO, (hw, stern)),
+        (Path.LINETO, (hw, shoulder)),
+        (Path.CURVE4, (hw, 15.0)),      # Control 1 DX
+        (Path.CURVE4, (3.0, bow_tip)),  # Control 2 DX
+        (Path.CURVE4, (0, bow_tip)),    # End Point Prua
+        (Path.CURVE4, (-3.0, bow_tip)), # Control 1 SX
+        (Path.CURVE4, (-hw, 15.0)),     # Control 2 SX
+        (Path.CURVE4, (-hw, shoulder)), # End Point Spalla SX
+        (Path.LINETO, (-hw, stern)),
+        (Path.CLOSEPOLY, (-hw, stern))
+    ]
+    codes, verts = zip(*path_data)
+    
     patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#404040', lw=3, zorder=1)
     ax.add_patch(patch)
     
-    # Fender di prua (Dettaglio Tecnico)
-    fender = PathPatch(Path(
-        [(-2, 16.25), (2, 16.25), (2, 16.7), (-2, 16.7), (-2, 16.25)],
-        [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY]
-    ), facecolor='#333333', lw=1, zorder=2)
-    ax.add_patch(fender)
+    # FENDER (Parabordo) - Ora solidale alla prua
+    # Rettangolo arrotondato o blocco solido sulla punta
+    fender_width = 4.0
+    fender_depth = 0.6
+    fender_y = bow_tip # Inizia esattamente sulla punta
+    
+    fender_verts = [
+        (-fender_width/2, fender_y),
+        (fender_width/2, fender_y),
+        (fender_width/2, fender_y + fender_depth),
+        (-fender_width/2, fender_y + fender_depth),
+        (-fender_width/2, fender_y)
+    ]
+    fender_codes = [Path.MOVETO, Path.LINETO, Path.LINETO, Path.LINETO, Path.CLOSEPOLY]
+    f_patch = PathPatch(Path(fender_verts, fender_codes), facecolor='#333333', edgecolor='black', zorder=2)
+    ax.add_patch(f_patch)
     
     # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 2. FRECCIA MOMENTO (Visualizzazione)
-    # Usiamo il valore in tm per scalare la grafica (mantiene proporzioni visive corrette)
-    if abs(Total_Moment_tm) > 1: # Soglia minima visualizzazione
+    # --- 2. FRECCIA MOMENTO ---
+    if abs(Total_Moment_tm) > 1:
         arc_color = '#800080'
-        arrow_y_pos = 22.0
+        arrow_y_pos = 24.0 # Alzata leggermente per non toccare il nuovo fender
         
         if Total_Moment_tm > 0:
-            # Rotazione SX (Counter-Clockwise)
-            p_start = (5.0, arrow_y_pos)
-            p_end = (-5.0, arrow_y_pos)
-            connection = "arc3,rad=0.3"
+            p_start = (5.0, arrow_y_pos); p_end = (-5.0, arrow_y_pos); connection = "arc3,rad=0.3"
         else:
-            # Rotazione DX (Clockwise)
-            p_start = (-5.0, arrow_y_pos)
-            p_end = (5.0, arrow_y_pos)
-            connection = "arc3,rad=-0.3" 
+            p_start = (-5.0, arrow_y_pos); p_end = (5.0, arrow_y_pos); connection = "arc3,rad=-0.3" 
 
-        # Larghezza freccia basata sul momento in tm (più gestibile graficamente)
         style = f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8"
-        
-        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end,
-                                     connectionstyle=connection, 
+        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, 
                                      arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
         
         rot_label = "ROT. SX" if Total_Moment_tm > 0 else "ROT. DX"
@@ -220,9 +283,9 @@ with col_center:
 
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
     st.pyplot(fig)
-    plt.close(fig) # Pulizia memoria critica
+    plt.close(fig)
     
-    # 3. Analisi Dinamica e Numerica
+    # 3. Analisi Dinamica
     st.markdown("### 📊 Analisi Dinamica")
     m1, m2, m3 = st.columns(3)
     
@@ -233,9 +296,8 @@ with col_center:
     m2.metric("Direzione", f"{deg_res:.0f}°")
     
     dir_rot = "STABILE"
-    if abs(Total_Moment_tm) > 2.0: # Soglia tolleranza
+    if abs(Total_Moment_tm) > 2.0:
         dir_rot = "SINISTRA" if Total_Moment_tm > 0 else "DRITTA"
     
-    # Visualizzazione doppia unità: kNm (Standard) / tm (Pratico)
     delta_str = f"{abs(Total_Moment_knm):.0f} kNm / {abs(Total_Moment_tm):.1f} tm"
     m3.metric("Rotazione", dir_rot, delta=delta_str, delta_color="off")
