@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.17", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.18", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -44,7 +44,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.17 (Fast Side Step Custom)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.18 (Full Side Step Suite)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -79,17 +79,22 @@ with st.sidebar:
     # 3. Preset Laterali (Side Step Custom)
     st.markdown("### ↔️ Traslazioni (Side Step)")
     
-    # Fast Side Step DRITTA (NUOVO)
-    # SX: 045° (58% = 20.3t) | DX: 215° (50% = 17.5t)
-    st.button("Fast Side Step DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
-
-    # Slow Side Step DRITTA
-    # SX: 009° / 25% | DX: 171° / 25%
-    st.button("Slow Side Step DRITTA", on_click=set_engine_state, args=(25, 9, 25, 171), use_container_width=True)
+    # Organizzazione a colonne per pulizia
+    col_ss1, col_ss2 = st.columns(2)
     
-    # Slow Side Step SINISTRA
-    # SX: 189° / 25% | DX: 351° / 25%
-    st.button("Slow Side Step SINISTRA", on_click=set_engine_state, args=(25, 189, 25, 351), use_container_width=True)
+    with col_ss1:
+        st.markdown("**Verso SINISTRA**")
+        # Fast Sinistra: SX 145° (50%) | DX 315° (58%)
+        st.button("⚡ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
+        # Slow Sinistra (50%): SX 189° | DX 351°
+        st.button("🐢 Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
+
+    with col_ss2:
+        st.markdown("**Verso DRITTA**")
+        # Fast Dritta: SX 045° (58%) | DX 215° (50%)
+        st.button("⚡ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
+        # Slow Dritta (50%): SX 009° | DX 171°
+        st.button("🐢 Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
