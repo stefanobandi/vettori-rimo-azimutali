@@ -76,6 +76,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1, th2 = np.radians(90 - angle1_deg), np.radians(90 - angle2_deg)
     v1, v2 = np.array([np.cos(th1), np.sin(th1)]), np.array([np.cos(th2), np.sin(th2)])
     matrix = np.column_stack((v1, -v2))
+    # Se il determinante è vicino a zero, le linee sono parallele
     if abs(np.linalg.det(matrix)) < 1e-4: return None
     t = np.linalg.solve(matrix, p2 - p1)[0]
     return p1 + t * v1
