@@ -25,7 +25,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione / Centro Ponderato
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -91,23 +91,35 @@ with col_c:
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # Prolungamenti
+    # --- LOGICA ORIGINE VETTORE RISULTANTE ---
     inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
+    
     if inter is not None:
+        # 1. Caso Intersezione (Vettori convergenti)
+        origin_res = inter
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g--', lw=1, alpha=0.3)
+    else:
+        # 2. Caso Parallelo: Centro di Spinta Ponderato (Weighted Thrust Center)
+        if (ton1 + ton2) > 0.1:
+            # Calcola la posizione X pesata tra i due motori
+            w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
+            origin_res = np.array([w_x, POS_THRUSTERS_Y])
+        else:
+            origin_res = np.array([0.0, POS_THRUSTERS_Y])
 
-    # Vettori
+    # Vettori Motori
     sc = 0.4
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx[0]*sc, F_sx[1]*sc, fc='red', ec='red', width=0.25)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx[0]*sc, F_dx[1]*sc, fc='green', ec='green', width=0.25)
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx[0]*sc, F_sx[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx[0]*sc, F_dx[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
     
-    origin_res = inter if inter is not None else np.array([0.0, -12.0])
-    ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4)
+    # Vettore Risultante (Origine dinamica)
+    ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
     
+    # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     
-    # Freccia Momento (Corretta con punta)
+    # Freccia Momento
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         style = "Simple, tail_width=2, head_width=10, head_length=10"
