@@ -41,38 +41,38 @@ def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
-# --- 1. SOLUTORE SLOW SIDE STEP (GEOMETRICO) ---
+# --- 1. SOLUTORE SLOW SIDE STEP (RIPRISTINATO E CORRETTO) ---
 def apply_slow_side_step(direction):
     """
-    CORREZIONE: Calcola angoli individuali per ogni motore basandosi sulla 
-    posizione reale (X, Y) del Pivot Point per garantire momento nullo.
+    Ripristina il calcolo geometrico a momento nullo.
+    Considera le coordinate X diverse dei propulsori per calcolare l'angolo.
+    Risultante garantita a 090/270 con Y uguale alla Y del Pivot Point.
     """
-    pp_x = st.session_state.pp_x
     pp_y = st.session_state.pp_y
-    dy = pp_y - POS_THRUSTERS_Y
+    dy = pp_y - POS_THRUSTERS_Y # Distanza longitudinale
+    
+    # Considero le coordinate X diverse (distanza dalla mezzeria)
+    x_sx = -POS_THRUSTERS_X
+    x_dx = POS_THRUSTERS_X
+    
+    # Per avere spinta 090 e momento nullo con potenze uguali, 
+    # l'intersezione deve avvenire a X=0 (mezzeria tra i motori).
+    # La distanza trasversale per il calcolo dell'angolo è la semidistanza tra i motori.
+    dist_x_calcolo = (x_dx - x_sx) / 2 # Risulta 2.7
     
     try:
-        if abs(dy) < 0.1:
-            st.error("Errore: PP troppo vicino alla linea dei motori.")
-            return
-
-        # Distanza trasversale relativa di ogni motore dal PP
-        # Motore SX è a -2.7, Motore DX è a +2.7
-        dx_sx = pp_x - (-POS_THRUSTERS_X)
-        dx_dx = pp_x - POS_THRUSTERS_X
-        
-        # Angoli necessari per puntare al PP
-        ang_sx = np.degrees(np.arctan2(dx_sx, dy))
-        ang_dx = np.degrees(np.arctan2(dx_dx, dy))
+        # Calcolo l'angolo affinché le linee d'azione si incrocino a Y = pp_y
+        alpha_rad = np.arctan2(dist_x_calcolo, dy)
+        alpha_deg = np.degrees(alpha_rad)
         
         if direction == "DRITTA":
-            # Per andare a DRITTA: componenti trasversali positive
-            a1_set = ang_sx
-            a2_set = 180 + ang_dx
+            # Vettore risultante verso 090
+            a1_set = alpha_deg
+            a2_set = 180 - alpha_deg
         else: # SINISTRA
-            # Per andare a SINISTRA: componenti trasversali negative
-            a1_set = 180 + ang_sx
-            a2_set = ang_dx
+            # Vettore risultante verso 270
+            a1_set = 180 + alpha_deg
+            a2_set = 360 - alpha_deg
             
         st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
@@ -89,14 +89,10 @@ def apply_fast_side_step(direction):
     
     try:
         if direction == "DRITTA":
-            a_drive = 45.0
-            p_drive = 50.0
-            x_drive = -POS_THRUSTERS_X
-            x_slave = POS_THRUSTERS_X
-            
+            a_drive, p_drive = 45.0, 50.0
+            x_drive, x_slave = -POS_THRUSTERS_X, POS_THRUSTERS_X
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
-            dx = x_slave - x_int
-            dy = POS_THRUSTERS_Y - pp_y
+            dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
             
             if abs(dy) < 0.01:
                 st.error("Errore: Il Pivot Point è troppo vicino alla linea dei motori.")
@@ -123,10 +119,8 @@ def apply_fast_side_step(direction):
             p_drive = 50.0
             x_drive = POS_THRUSTERS_X
             x_slave = -POS_THRUSTERS_X
-            
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
-            dx = x_slave - x_int
-            dy = POS_THRUSTERS_Y - pp_y
+            dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
             
             if abs(dy) < 0.01:
                 st.error("Errore: Il Pivot Point è troppo vicino alla linea dei motori.")
@@ -180,10 +174,6 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("### ↔️ Traslazioni (Side Step)")
-    h1, h2 = st.columns(2)
-    h1.markdown("<div style='text-align: center; color: #ff4b4b;'><b>Verso SX</b></div>", unsafe_allow_html=True)
-    h2.markdown("<div style='text-align: center; color: #4CAF50;'><b>Verso DX</b></div>", unsafe_allow_html=True)
-
     row_fast1, row_fast2 = st.columns(2)
     with row_fast1:
         st.button("⬅️ Fast SINISTRA", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
