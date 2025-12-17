@@ -53,111 +53,70 @@ def apply_slow_side_step(direction):
         if direction == "DRITTA":
             a1_set = alpha_deg
             a2_set = 180 - alpha_deg
-            msg = f"Slow DRITTA: Angolo {round(alpha_deg)}° su PP {pp_y}m"
         else: # SINISTRA
             a1_set = 180 + alpha_deg
             a2_set = 360 - alpha_deg
-            msg = f"Slow SINISTRA: Angolo {round(alpha_deg)}° su PP {pp_y}m"
             
         st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
         st.session_state.p2 = 50
         st.session_state.a2 = int(round(a2_set % 360))
-        st.toast(msg, icon="🐢")
     except Exception as e:
         st.error(f"Errore calcolo Slow: {e}")
 
-# --- 2. SOLUTORE FAST SIDE STEP (FISICO/FORZE) ---
+# --- 2. SOLUTORE FAST SIDE STEP (RICHIESTA UTENTE) ---
 def apply_fast_side_step(direction):
     """
-    Risolve un sistema di equazioni per trovare Potenza e Angolo del motore 'Libero'
-    dato un motore 'Fisso' (50% potenza, angolo fisso), per ottenere:
-    - Risultante Y = 0
-    - Momento su PP = 0
+    Applica la logica di intersezione vettoriale sul Pivot Point.
+    - Dritta: Motore SX (Drive) fisso a 045° / 50%. Calcola DX.
+    - Sinistra: Motore DX (Drive) fisso a 315° / 50%. Calcola SX.
     """
     pp_y = st.session_state.pp_y
-    
-    # Parametri Motore Fisso (MASTER)
-    fixed_power_perc = 50.0
-    fixed_force_ton = (fixed_power_perc / 100.0) * BOLLARD_PULL_PER_ENGINE
+    dist_y = pp_y - POS_THRUSTERS_Y # Distanza longitudinale tra propulsori e PP
     
     if direction == "DRITTA":
-        # MASTER è DX (Fisso a 070°)
-        master_angle_deg = 70.0
-        # Vettori Master (DX)
-        u_m = fixed_force_ton * np.sin(np.radians(master_angle_deg))
-        v_m = fixed_force_ton * np.cos(np.radians(master_angle_deg))
+        # Motore SX (Drive) impostato dall'utente
+        a_drive = 45.0
+        p_drive = 50.0
+        x_drive = -POS_THRUSTERS_X
+        x_slave = POS_THRUSTERS_X
         
-        # Posizioni rispetto al PP
-        # Master (DX)
-        rx_m = POS_THRUSTERS_X - 0 # PP x è 0
-        ry_m = POS_THRUSTERS_Y - pp_y
+        # 1. Trovo la coordinata X del punto di intersezione sul PP
+        # x_int = x_drive + dist_y * tan(45°)
+        x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
         
-        # Slave (SX) - Incognita
-        rx_s = -POS_THRUSTERS_X - 0
-        ry_s = POS_THRUSTERS_Y - pp_y
+        # 2. Calcolo l'angolo del motore DX (Slave) affinché la linea d'azione passi per x_int
+        # Il vettore deve puntare via dal punto di intersezione
+        dx = x_slave - x_int
+        dy = POS_THRUSTERS_Y - pp_y
+        a_slave = np.degrees(np.arctan2(dx, dy)) % 360
         
+        # 3. Calcolo potenza per annullare la spinta longitudinale (Y)
+        # p_drive * cos(a_drive) + p_slave * cos(a_slave) = 0
+        p_slave = -(p_drive * np.cos(np.radians(a_drive))) / np.cos(np.radians(a_slave))
+        
+        # Applica allo stato
+        st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
+        st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
+        st.toast(f"Fast Dritta calcolato: Slave a {int(round(a_slave))}° con {int(round(p_slave))}%", icon="⚡")
+
     else: # SINISTRA
-        # MASTER è SX (Fisso a 290° -> simmetrico di 70 su asse Y)
-        master_angle_deg = 290.0
-        # Vettori Master (SX)
-        u_m = fixed_force_ton * np.sin(np.radians(master_angle_deg))
-        v_m = fixed_force_ton * np.cos(np.radians(master_angle_deg))
+        # Motore DX (Drive) impostato simmetricamente a 315°
+        a_drive = 315.0
+        p_drive = 50.0
+        x_drive = POS_THRUSTERS_X
+        x_slave = -POS_THRUSTERS_X
         
-        # Posizioni rispetto al PP
-        # Master (SX)
-        rx_m = -POS_THRUSTERS_X
-        ry_m = POS_THRUSTERS_Y - pp_y
-        # Slave (DX) - Incognita
-        rx_s = POS_THRUSTERS_X
-        ry_s = POS_THRUSTERS_Y - pp_y
-
-    # --- RISOLUZIONE SISTEMA ---
-    # 1. Equilibrio asse Y (Longitudinale): v_m + v_s = 0  => v_s = -v_m
-    v_s = -v_m
-    
-    # 2. Equilibrio Momenti: M_m + M_s = 0 => M_s = -M_m
-    # Momento = rx * v - ry * u
-    mom_m = rx_m * v_m - ry_m * u_m
-    target_mom_s = -mom_m
-    
-    # Formula inversa momento per trovare u_s (componente X slave)
-    # target_mom_s = rx_s * v_s - ry_s * u_s
-    # ry_s * u_s = rx_s * v_s - target_mom_s
-    
-    if abs(ry_s) < 0.01: # Protezione divisione per zero (PP esattamente tra i motori)
-        st.error("Pivot Point troppo vicino alla linea motori per Fast Side Step.")
-        return
-
-    u_s = (rx_s * v_s - target_mom_s) / ry_s
-    
-    # --- RICOSTRUZIONE VETTORE SLAVE ---
-    force_s = np.sqrt(u_s**2 + v_s**2)
-    power_s_perc = (force_s / BOLLARD_PULL_PER_ENGINE) * 100.0
-    angle_s_rad = np.arctan2(u_s, v_s)
-    angle_s_deg = np.degrees(angle_s_rad) % 360
-    
-    # Check limiti fisici
-    warning = ""
-    if power_s_perc > 100.0:
-        power_s_perc = 100.0
-        warning = " (Limitato a 100%)"
-    
-    # Applicazione
-    if direction == "DRITTA":
-        # Master DX, Slave SX
-        st.session_state.p2 = int(fixed_power_perc)
-        st.session_state.a2 = int(master_angle_deg)
-        st.session_state.p1 = int(power_s_perc)
-        st.session_state.a1 = int(round(angle_s_deg))
-    else:
-        # Master SX, Slave DX
-        st.session_state.p1 = int(fixed_power_perc)
-        st.session_state.a1 = int(master_angle_deg)
-        st.session_state.p2 = int(power_s_perc)
-        st.session_state.a2 = int(round(angle_s_deg))
+        x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
+        dx = x_slave - x_int
+        dy = POS_THRUSTERS_Y - pp_y
+        a_slave = np.degrees(np.arctan2(dx, dy)) % 360
         
-    st.toast(f"Fast {direction}: Compensa a {int(power_s_perc)}% / {int(round(angle_s_deg))}°{warning}", icon="⚡")
+        p_slave = -(p_drive * np.cos(np.radians(a_drive))) / np.cos(np.radians(a_slave))
+        
+        st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
+        st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
+        st.toast(f"Fast Sinistra calcolato: Slave a {int(round(a_slave))}° con {int(round(p_slave))}%", icon="⚡")
 
 # --- HEADER ---
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
@@ -193,14 +152,12 @@ with st.sidebar:
     h1.markdown("<div style='text-align: center; color: #ff4b4b;'><b>Verso SX</b></div>", unsafe_allow_html=True)
     h2.markdown("<div style='text-align: center; color: #4CAF50;'><b>Verso DX</b></div>", unsafe_allow_html=True)
 
-    # Riga 1: FAST (ORA DINAMICI)
     row_fast1, row_fast2 = st.columns(2)
     with row_fast1:
         st.button("⬅️ Fast SINISTRA", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
     with row_fast2:
         st.button("➡️ Fast DRITTA", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
 
-    # Riga 2: SLOW (DINAMICI)
     row_slow1, row_slow2 = st.columns(2)
     with row_slow1:
         st.button("⬅️ Slow SINISTRA", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
@@ -222,6 +179,7 @@ u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
 F_sx = np.array([u1, v1])
 F_dx = np.array([u2, v2])
 
+# Controllo interferenza
 efficiency_factor = 1.0
 warning_interference = False
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
@@ -252,6 +210,7 @@ M_dx_tm = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * efficiency_factor
 Total_Moment_tm = M_sx_tm + M_dx_tm
 Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
+# Centro di spinta (Intersezione o Ponderata)
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1 = np.radians(90 - angle1_deg)
     th2 = np.radians(90 - angle2_deg)
@@ -268,14 +227,13 @@ if ton1 > 0.1 and ton2 > 0.1:
     intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 
 origin_res = np.array([0.0, -12.0])
-logic_used = "B (Default)"
+logic_used = "B"
 if intersection is not None:
     origin_res = intersection
-    logic_used = "C (Intersezione Reale)"
+    logic_used = "C"
 elif ton1 + ton2 > 0.1:
     w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
     origin_res = np.array([w_x, -12.0])
-    logic_used = "B (Media Ponderata)"
 
 # --- LAYOUT VISIVO ---
 col_sx, col_center, col_dx = st.columns([1, 2, 1], gap="medium")
@@ -324,49 +282,41 @@ with col_center:
     codes, verts = zip(*path_data)
     ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
     
-    fender_data = [
-        (Path.MOVETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),   
-        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
-    ]
+    # Fender
+    fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
 
+    # PP
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
+    # Arco Rotazione
     if abs(Total_Moment_tm) > 1:
         arc_color = '#800080'; arrow_y_pos = 24.0 
         p_start = (5.0, arrow_y_pos) if Total_Moment_tm > 0 else (-5.0, arrow_y_pos)
         p_end = (-5.0, arrow_y_pos) if Total_Moment_tm > 0 else (5.0, arrow_y_pos)
         connection = "arc3,rad=0.3" if Total_Moment_tm > 0 else "arc3,rad=-0.3"
         style = f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8"
-        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, 
-                                     arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
-        rot_label = "ROT. SX" if Total_Moment_tm > 0 else "ROT. DX"
-        ax.text(0, arrow_y_pos + 3.0, rot_label, ha='center', color=arc_color, fontweight='bold', fontsize=12)
+        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
 
+    # Vettori Motori
     scale = 0.4
     ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
 
-    ax.scatter(origin_res[0], origin_res[1], c='blue', s=40, marker='x', zorder=4)
+    # Vettore Risultante
     ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
-
-    if logic_used == "C (Intersezione Reale)" and abs(origin_res[1]) < 60:
-        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
-        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
 
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
     st.pyplot(fig); plt.close(fig)
     
+    # Dashboard
     st.markdown("### 📊 Analisi Dinamica")
-    if warning_interference: st.error("⚠️ THRUSTER INTERFERENCE: I flussi si incrociano! Spinta ridotta del 20%.")
+    if warning_interference: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
     
     m1, m2, m3 = st.columns(3)
-    deg_res = np.degrees(np.arctan2(res_u, res_v))
-    if deg_res < 0: deg_res += 360
-    
+    deg_res = np.degrees(np.arctan2(res_u, res_v)) % 360
     m1.metric("Tiro Totale", f"{res_ton:.1f} t")
     m2.metric("Direzione", f"{deg_res:.0f}°")
     
