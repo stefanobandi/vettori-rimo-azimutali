@@ -41,7 +41,7 @@ def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
-# --- 1. SOLUTORE SLOW SIDE STEP (RIPRISTINATO E CORRETTO) ---
+# --- 1. SOLUTORE SLOW SIDE STEP ---
 def apply_slow_side_step(direction):
     """
     Ripristina il calcolo geometrico a momento nullo.
@@ -82,7 +82,7 @@ def apply_slow_side_step(direction):
     except Exception as e:
         st.error(f"Errore calcolo Slow: {e}")
 
-# --- 2. SOLUTORE FAST SIDE STEP (CORRETTO CON ERRORI) ---
+# --- 2. SOLUTORE FAST SIDE STEP ---
 def apply_fast_side_step(direction):
     pp_y = st.session_state.pp_y
     dist_y = pp_y - POS_THRUSTERS_Y 
@@ -148,9 +148,8 @@ def apply_fast_side_step(direction):
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center;'>
-    <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.25 (Fast Side Step Physics Solver)</span>
+    <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale
 </div>
 """, unsafe_allow_html=True)
 
@@ -307,17 +306,17 @@ with col_center:
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
 
-    # --- AGGIUNTA: CERCHI AZIMUTALI ---
+    # Cerchi Azimutali
     circle_sx = plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
     circle_dx = plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
     ax.add_patch(circle_sx)
     ax.add_patch(circle_dx)
 
-    # --- AGGIUNTA: SUGGERIMENTO ELICA ---
+    # Suggerimento elica
     ax.plot([pos_sx[0], pos_sx[0] + 2.0 * np.sin(rad1)], [pos_sx[1], pos_sx[1] + 2.0 * np.cos(rad1)], color='black', lw=2, zorder=3)
     ax.plot([pos_dx[0], pos_dx[0] + 2.0 * np.sin(rad2)], [pos_dx[1], pos_dx[1] + 2.0 * np.cos(rad2)], color='black', lw=2, zorder=3)
 
-    # --- PROLUNGAMENTI ---
+    # Prolungamenti
     if intersection is not None:
         ax.plot([pos_sx[0], intersection[0]], [pos_sx[1], intersection[1]], color='red', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
         ax.plot([pos_dx[0], intersection[0]], [pos_dx[1], intersection[1]], color='green', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
