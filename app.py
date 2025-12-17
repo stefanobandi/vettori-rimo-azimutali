@@ -5,16 +5,31 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.18", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
+
+# --- MODIFICA 1: FUNZIONE POPUP (DIALOG) ---
+@st.dialog("Risultati Calcolo Motore Slave")
+def show_slave_popup(data):
+    st.write(f"### {data['mode']}")
+    st.write("---")
+    st.write(f"**Motore Slave:** {data['engine']}")
+    col1, col2 = st.columns(2)
+    col1.metric("Azimut", f"{data['azimuth']}°")
+    col2.metric("Potenza", f"{data['power']}%")
+    if st.button("Chiudi"):
+        st.rerun()
 
 # --- COSTANTI FISICHE ---
-G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
+G_ACCEL = 9.80665  # Accelerazione gravità
+POS_THRUSTERS_Y = -12.0
+POS_THRUSTERS_X = 2.7
+BOLLARD_PULL_PER_ENGINE = 35.0 # Tonnellate
 
 # --- GESTIONE SESSION STATE ---
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
     "p2": 50, "a2": 0,    # Motore DX
-    "pp_x": 0.0, "pp_y": 5.42
+    "pp_x": 0.0, "pp_y": 5.42 # Pivot Point
 }
 
 for key, val in defaults.items():
@@ -38,13 +53,74 @@ def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
-# --- HEADER ---
+# --- 1. SOLUTORE SLOW SIDE STEP ---
+def apply_slow_side_step(direction):
+    pp_y = st.session_state.pp_y
+    dy = pp_y - POS_THRUSTERS_Y 
+    x_sx, x_dx = -POS_THRUSTERS_X, POS_THRUSTERS_X
+    dist_x_calcolo = (x_dx - x_sx) / 2 
+    
+    try:
+        alpha_rad = np.arctan2(dist_x_calcolo, dy)
+        alpha_deg = np.degrees(alpha_rad)
+        
+        if direction == "DRITTA":
+            a1_set, a2_set = alpha_deg, 180 - alpha_deg
+            st.session_state.popup_data = {"mode": "SLOW DRITTA", "engine": "DX (STBD)", "azimuth": int(round(a2_set % 360)), "power": 50}
+        else: # SINISTRA
+            a1_set, a2_set = 180 + alpha_deg, 360 - alpha_deg
+            st.session_state.popup_data = {"mode": "SLOW SINISTRA", "engine": "SX (PORT)", "azimuth": int(round(a1_set % 360)), "power": 50}
+            
+        st.session_state.p1, st.session_state.a1 = 50, int(round(a1_set % 360))
+        st.session_state.p2, st.session_state.a2 = 50, int(round(a2_set % 360))
+    except Exception as e:
+        st.error(f"Errore calcolo Slow: {e}")
+
+# --- 2. SOLUTORE FAST SIDE STEP ---
+def apply_fast_side_step(direction):
+    pp_y = st.session_state.pp_y
+    dist_y = pp_y - POS_THRUSTERS_Y 
+    try:
+        if direction == "DRITTA":
+            a_drive, p_drive = 45.0, 50.0
+            x_int = -POS_THRUSTERS_X + dist_y * np.tan(np.radians(a_drive))
+            dx, dy = POS_THRUSTERS_X - x_int, POS_THRUSTERS_Y - pp_y
+            if abs(dy) < 0.01: return
+            a_slave = np.degrees(np.arctan2(dx, dy)) % 360
+            denom = np.cos(np.radians(a_slave))
+            p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
+            if 1.0 <= p_slave <= 100.0:
+                st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
+                st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
+                st.session_state.popup_data = {"mode": "FAST DRITTA", "engine": "DX (STBD)", "azimuth": int(round(a_slave)), "power": int(round(p_slave))}
+        else: # SINISTRA
+            a_drive, p_drive = 315.0, 50.0
+            x_int = POS_THRUSTERS_X + dist_y * np.tan(np.radians(a_drive))
+            dx, dy = -POS_THRUSTERS_X - x_int, POS_THRUSTERS_Y - pp_y
+            if abs(dy) < 0.01: return
+            a_slave = np.degrees(np.arctan2(dx, dy)) % 360
+            denom = np.cos(np.radians(a_slave))
+            p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
+            if 1.0 <= p_slave <= 100.0:
+                st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
+                st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
+                st.session_state.popup_data = {"mode": "FAST SINISTRA", "engine": "SX (PORT)", "azimuth": int(round(a_slave)), "power": int(round(p_slave))}
+    except Exception as e:
+        st.error(f"Errore geometrico: {e}")
+
+# --- ATTIVAZIONE POPUP ---
+if "popup_data" in st.session_state:
+    show_slave_popup(st.session_state.popup_data)
+    del st.session_state.popup_data
+
+# --- HEADER (MODIFICA 2: SOTTOTITOLO AGGIORNATO) ---
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center;'>
-    <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.18 (Full Side Step Suite)</span>
+    <p style='font-size: 16px; color: #555; margin-bottom: 5px;'>Per informazioni contattare <b>stefano.bandi22@gmail.com</b></p>
+    <p style='font-size: 18px; margin-bottom: 10px;'>
+        <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -53,228 +129,108 @@ st.write("---")
 # --- SIDEBAR COMPLETA ---
 with st.sidebar:
     st.header("Comandi Globali")
-    
-    # 1. Reset Separati
-    st.markdown("### 🔄 Reset")
     col_res1, col_res2 = st.columns(2)
-    with col_res1:
-        st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    with col_res2:
-        st.button("Reset Pivot", on_click=reset_pivot, use_container_width=True)
-    
+    with col_res1: st.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
+    with col_res2: st.button("Reset Pivot", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
-    
-    # 2. Preset Longitudinali
     st.markdown("### ↕️ Longitudinali")
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
-        st.button("Tutta AVANTI", on_click=set_engine_state, args=(100, 0, 100, 0), use_container_width=True)
-        st.button("Mezza INDIETRO", on_click=set_engine_state, args=(50, 180, 50, 180), use_container_width=True)
-    with col_l2:
-        st.button("Mezza AVANTI", on_click=set_engine_state, args=(50, 0, 50, 0), use_container_width=True)
-        st.button("Tutta INDIETRO", on_click=set_engine_state, args=(100, 180, 100, 180), use_container_width=True)
-
+    col_fwd1, col_fwd2 = st.columns(2)
+    with col_fwd1: st.button("Tutta AVANTI", on_click=set_engine_state, args=(100, 0, 100, 0), use_container_width=True)
+    with col_fwd2: st.button("Mezza AVANTI", on_click=set_engine_state, args=(50, 0, 50, 0), use_container_width=True)
+    col_aft1, col_aft2 = st.columns(2)
+    with col_aft1: st.button("Tutta INDIETRO", on_click=set_engine_state, args=(100, 180, 100, 180), use_container_width=True)
+    with col_aft2: st.button("Mezza INDIETRO", on_click=set_engine_state, args=(50, 180, 50, 180), use_container_width=True)
     st.markdown("---")
-
-    # 3. Preset Laterali (Side Step Custom)
     st.markdown("### ↔️ Traslazioni (Side Step)")
-    
-    # Organizzazione a colonne per pulizia
-    col_ss1, col_ss2 = st.columns(2)
-    
-    with col_ss1:
-        st.markdown("**Verso SINISTRA**")
-        # Fast Sinistra: SX 145° (50%) | DX 315° (58%)
-        st.button("⚡ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
-        # Slow Sinistra (50%): SX 189° | DX 351°
-        st.button("🐢 Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
-
-    with col_ss2:
-        st.markdown("**Verso DRITTA**")
-        # Fast Dritta: SX 045° (58%) | DX 215° (50%)
-        st.button("⚡ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
-        # Slow Dritta (50%): SX 009° | DX 171°
-        st.button("🐢 Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
+    row_fast1, row_fast2 = st.columns(2)
+    with row_fast1: st.button("⬅️ Fast SINISTRA", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
+    with row_fast2: st.button("➡️ Fast DRITTA", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
+    row_slow1, row_slow2 = st.columns(2)
+    with row_slow1: st.button("⬅️ Slow SINISTRA", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
+    with row_slow2: st.button("➡️ Slow DRITTA", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
 
 # --- CALCOLI FISICI ---
-pos_sx = np.array([-2.7, -12.0])
-pos_dx = np.array([2.7, -12.0])
+pos_sx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y])
+pos_dx = np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
-
-# Tonnellate
-ton1 = (st.session_state.p1 / 100) * 35
-ton2 = (st.session_state.p2 / 100) * 35
-
-# Vettori
+ton1 = (st.session_state.p1 / 100) * BOLLARD_PULL_PER_ENGINE
+ton2 = (st.session_state.p2 / 100) * BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 u1, v1 = ton1 * np.sin(rad1), ton1 * np.cos(rad1)
 u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
+F_sx, F_dx = np.array([u1, v1]), np.array([u2, v2])
 
-F_sx = np.array([u1, v1])
-F_dx = np.array([u2, v2])
+efficiency_factor = 1.0
+warning_interference = False
+def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
+    wash_len = np.linalg.norm(wash_vec)
+    if wash_len < 0.1: return False
+    wash_dir = wash_vec / wash_len
+    to_target = target_pos - origin
+    proj_length = np.dot(to_target, wash_dir)
+    return True if (proj_length > 0 and np.linalg.norm(to_target - (proj_length * wash_dir)) < threshold) else False
 
-# Risultante
-res_u = u1 + u2
-res_v = v1 + v2
+if check_wash_hit(pos_sx, -F_sx, pos_dx) or check_wash_hit(pos_dx, -F_dx, pos_sx):
+    efficiency_factor, warning_interference = 0.8, True
+
+res_u = (u1 + u2) * efficiency_factor
+res_v = (v1 + v2) * efficiency_factor
 res_ton = np.sqrt(res_u**2 + res_v**2)
-
-# Momento
-r_sx = pos_sx - pp_pos
-r_dx = pos_dx - pp_pos
-
-M_sx_tm = r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]
-M_dx_tm = r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]
-Total_Moment_tm = M_sx_tm + M_dx_tm
+Total_Moment_tm = ((pos_sx-pp_pos)[0]*F_sx[1] - (pos_sx-pp_pos)[1]*F_sx[0] + (pos_dx-pp_pos)[0]*F_dx[1] - (pos_dx-pp_pos)[1]*F_dx[0]) * efficiency_factor
 Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
-# Intersezione
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
-    th1 = np.radians(90 - angle1_deg)
-    th2 = np.radians(90 - angle2_deg)
-    v1 = np.array([np.cos(th1), np.sin(th1)])
-    v2 = np.array([np.cos(th2), np.sin(th2)])
+    th1, th2 = np.radians(90 - angle1_deg), np.radians(90 - angle2_deg)
+    v1, v2 = np.array([np.cos(th1), np.sin(th1)]), np.array([np.cos(th2), np.sin(th2)])
     matrix = np.column_stack((v1, -v2))
-    delta = p2 - p1
-    if abs(np.linalg.det(matrix)) < 1e-4:
-        return None
-    t = np.linalg.solve(matrix, delta)[0]
-    return p1 + t * v1
+    if abs(np.linalg.det(matrix)) < 1e-4: return None
+    return p1 + np.linalg.solve(matrix, p2 - p1)[0] * v1
 
-intersection = None
-if ton1 > 0.1 and ton2 > 0.1:
-    intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
+intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2) if ton1 > 0.1 and ton2 > 0.1 else None
+origin_res = intersection if intersection is not None else np.array([(ton1*pos_sx[0] + ton2*pos_dx[0])/(ton1+ton2+1e-6), -12.0])
 
-origin_res = np.array([0.0, -12.0])
-logic_used = "B (Default)"
-
-if intersection is not None and np.linalg.norm(intersection - np.array([0, -12])) < 80:
-    origin_res = intersection
-    logic_used = "C (Intersezione)"
-elif ton1 + ton2 > 0.1:
-    w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
-    origin_res = np.array([w_x, -12.0])
-    logic_used = "B (Media)"
-
-# --- LAYOUT ---
+# --- LAYOUT VISIVO ---
 col_sx, col_center, col_dx = st.columns([1, 2, 1], gap="medium")
-
-def plot_clock(azimuth_deg, color):
-    fig, ax = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
-    ax.set_theta_zero_location('N')
-    ax.set_theta_direction(-1)
-    ax.set_yticks([])
-    ax.set_xticks(np.radians([0, 90, 180, 270]))
-    ax.set_xticklabels(['0', '90', '180', '270'])
-    ax.arrow(np.radians(azimuth_deg), 0, 0, 0.9, color=color, width=0.15, head_width=0, length_includes_head=True)
-    ax.grid(True, alpha=0.3)
-    fig.patch.set_alpha(0)
-    return fig
-
-# === PORT ===
 with col_sx:
     st.markdown("<h3 style='text-align: center; color: #ff4b4b;'>PORT (SX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza SX (%)", 0, 100, step=1, key="p1")
     st.metric("Spinta SX", f"{ton1:.1f} t")
     st.slider("Azimut SX (°)", 0, 360, step=1, key="a1")
-    fig_sx = plot_clock(st.session_state.a1, 'red')
-    st.pyplot(fig_sx, use_container_width=False)
-    plt.close(fig_sx)
-
-# === STBD ===
 with col_dx:
     st.markdown("<h3 style='text-align: center; color: #4CAF50;'>STBD (DX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza DX (%)", 0, 100, step=1, key="p2")
     st.metric("Spinta DX", f"{ton2:.1f} t")
     st.slider("Azimut DX (°)", 0, 360, step=1, key="a2")
-    fig_dx = plot_clock(st.session_state.a2, 'green')
-    st.pyplot(fig_dx, use_container_width=False)
-    plt.close(fig_dx)
 
-# === CENTER ===
 with col_center:
     with st.expander("📍 Configurazione Pivot Point", expanded=True):
-        c1, c2 = st.columns(2)
-        with c1: st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.1, key="pp_y")
-        with c2: st.slider("Trasversale (X)", -5.0, 5.0, step=0.1, key="pp_x")
-
+        st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.1, key="pp_y")
+        st.slider("Trasversale (X)", -5.0, 5.0, step=0.1, key="pp_x")
     fig, ax = plt.subplots(figsize=(8, 10))
-    
-    # 1. DISEGNO SCAFO & FENDER (V5.13 Design)
-    hw = 5.85; stern = -16.25; bow_tip = 16.25; shoulder = 8.0
-
-    path_data = [
-        (Path.MOVETO, (-hw, stern)),
-        (Path.LINETO, (hw, stern)),
-        (Path.LINETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
-        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
-        (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
-    ]
-    codes, verts = zip(*path_data)
-    patch = PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1)
-    ax.add_patch(patch)
-    
-    # Fender (Solo contorno spesso)
-    fender_data = [
-        (Path.MOVETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),   
-        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
-    ]
-    f_codes, f_verts = zip(*fender_data)
-    fender_patch = PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2)
-    ax.add_patch(fender_patch)
-
-    # Pivot Point
+    hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
+    path_data = [(Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))]
+    codes, verts = zip(*path_data); ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2))
+    ax.plot([pos_sx[0], pos_sx[0] + 2.0 * np.sin(rad1)], [pos_sx[1], pos_sx[1] + 2.0 * np.cos(rad1)], color='black', lw=2, zorder=3)
+    ax.plot([pos_dx[0], pos_dx[0] + 2.0 * np.sin(rad2)], [pos_dx[1], pos_dx[1] + 2.0 * np.cos(rad2)], color='black', lw=2, zorder=3)
+    if intersection is not None:
+        ax.plot([pos_sx[0], intersection[0]], [pos_sx[1], intersection[1]], color='red', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
+        ax.plot([pos_dx[0], intersection[0]], [pos_dx[1], intersection[1]], color='green', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
-
-    # 2. FRECCIA MOMENTO
     if abs(Total_Moment_tm) > 1:
-        arc_color = '#800080'
-        arrow_y_pos = 24.0 
-        
-        if Total_Moment_tm > 0:
-            p_start = (5.0, arrow_y_pos); p_end = (-5.0, arrow_y_pos); connection = "arc3,rad=0.3"
-        else:
-            p_start = (-5.0, arrow_y_pos); p_end = (5.0, arrow_y_pos); connection = "arc3,rad=-0.3" 
-
-        style = f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8"
-        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, 
-                                     arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
-        
-        rot_label = "ROT. SX" if Total_Moment_tm > 0 else "ROT. DX"
-        ax.text(0, arrow_y_pos + 3.0, rot_label, ha='center', color=arc_color, fontweight='bold', fontsize=12)
-
-    # Motori
+        ax.add_patch(FancyArrowPatch(posA=(5.0, 24.0) if Total_Moment_tm > 0 else (-5.0, 24.0), posB=(-5.0, 24.0) if Total_Moment_tm > 0 else (5.0, 24.0), connectionstyle="arc3,rad=0.3" if Total_Moment_tm > 0 else "arc3,rad=-0.3", arrowstyle=f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8", color='#800080', alpha=0.8, zorder=5))
     scale = 0.4
     ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
-
-    # Risultante
-    ax.scatter(origin_res[0], origin_res[1], c='blue', s=40, marker='x', zorder=4)
     ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
-
-    if logic_used == "C (Intersezione)" and abs(origin_res[1]) < 40:
-        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
-        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
-
-    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
-    st.pyplot(fig)
-    plt.close(fig)
+    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off'); st.pyplot(fig); plt.close(fig)
     
-    # 3. Analisi Dinamica
     st.markdown("### 📊 Analisi Dinamica")
+    if warning_interference: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
     m1, m2, m3 = st.columns(3)
-    
-    deg_res = np.degrees(np.arctan2(res_u, res_v))
-    if deg_res < 0: deg_res += 360
-    
     m1.metric("Tiro Totale", f"{res_ton:.1f} t")
-    m2.metric("Direzione", f"{deg_res:.0f}°")
-    
-    dir_rot = "STABILE"
-    if abs(Total_Moment_tm) > 2.0:
-        dir_rot = "SINISTRA" if Total_Moment_tm > 0 else "DRITTA"
-    
-    delta_str = f"{abs(Total_Moment_knm):.0f} kNm / {abs(Total_Moment_tm):.1f} tm"
-    m3.metric("Rotazione", dir_rot, delta=delta_str, delta_color="off")
+    m2.metric("Direzione", f"{np.degrees(np.arctan2(res_u, res_v)) % 360:.0f}°")
+    rot = "STABILE" if abs(Total_Moment_tm) < 2.0 else ("SINISTRA" if Total_Moment_tm > 0 else "DRITTA")
+    m3.metric("Rotazione", rot, delta=f"{abs(Total_Moment_knm):.0f} kNm", delta_color="off")
