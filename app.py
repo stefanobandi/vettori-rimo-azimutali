@@ -118,4 +118,14 @@ with col_c:
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         style = "Simple, tail_width=2, head_width=10, head_length=10"
-        ax.add_patch(FancyArrowPatch(p_s,
+        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle=style, color='purple', alpha=0.8, zorder=5))
+
+    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off')
+    st.pyplot(fig)
+
+    st.markdown("### 📊 Analisi Dinamica")
+    if warning_int: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Tiro Totale", f"{res_ton:.1f} t")
+    m2.metric("Direzione", f"{np.degrees(np.arctan2(res_u, res_v))%360:.0f}°")
+    m3.metric("Rotazione", "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE", delta=f"{abs(M_knm):.0f} kNm", delta_color="off")
