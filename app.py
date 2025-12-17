@@ -82,17 +82,14 @@ def apply_fast_side_step(direction):
         x_slave = POS_THRUSTERS_X
         
         # 1. Trovo la coordinata X del punto di intersezione sul PP
-        # x_int = x_drive + dist_y * tan(45°)
         x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
         
         # 2. Calcolo l'angolo del motore DX (Slave) affinché la linea d'azione passi per x_int
-        # Il vettore deve puntare via dal punto di intersezione
         dx = x_slave - x_int
         dy = POS_THRUSTERS_Y - pp_y
         a_slave = np.degrees(np.arctan2(dx, dy)) % 360
         
         # 3. Calcolo potenza per annullare la spinta longitudinale (Y)
-        # p_drive * cos(a_drive) + p_slave * cos(a_slave) = 0
         p_slave = -(p_drive * np.cos(np.radians(a_drive))) / np.cos(np.radians(a_slave))
         
         # Applica allo stato
@@ -227,10 +224,8 @@ if ton1 > 0.1 and ton2 > 0.1:
     intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 
 origin_res = np.array([0.0, -12.0])
-logic_used = "B"
 if intersection is not None:
     origin_res = intersection
-    logic_used = "C"
 elif ton1 + ton2 > 0.1:
     w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
     origin_res = np.array([w_x, -12.0])
@@ -287,14 +282,20 @@ with col_center:
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
 
-    # PP
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
-    ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
+    # --- AGGIUNTA: CERCHI AZIMUTALI (Diametro 2m -> Raggio 1m) ---
+    circle_sx = plt.Circle(pos_sx, 1.0, color='red', fill=False, lw=1, ls='-', alpha=0.5, zorder=2)
+    circle_dx = plt.Circle(pos_dx, 1.0, color='green', fill=False, lw=1, ls='-', alpha=0.5, zorder=2)
+    ax.add_patch(circle_sx)
+    ax.add_patch(circle_dx)
 
     # --- AGGIUNTA: PROLUNGAMENTI CHE SI FERMANO ALL'INTERSEZIONE ---
     if intersection is not None:
         ax.plot([pos_sx[0], intersection[0]], [pos_sx[1], intersection[1]], color='red', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
         ax.plot([pos_dx[0], intersection[0]], [pos_dx[1], intersection[1]], color='green', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
+
+    # PP
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
     # Arco Rotazione
     if abs(Total_Moment_tm) > 1:
