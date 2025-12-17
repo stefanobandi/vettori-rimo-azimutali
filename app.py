@@ -70,12 +70,9 @@ M_knm = M_tm * G_ACCEL
 # --- LOGICA ORIGINE RISULTANTE CON SOGLIA 50m ---
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 use_weighted = True
-
 if inter is not None:
-    # Calcola la distanza dell'intersezione dal centro del rimorchiatore (0,0)
     dist_inter = np.linalg.norm(inter)
-    if dist_inter <= 50.0:
-        use_weighted = False
+    if dist_inter <= 50.0: use_weighted = False
 
 # --- LAYOUT GRAFICO ---
 col_l, col_c, col_r = st.columns([1, 2, 1])
@@ -120,7 +117,8 @@ with col_c:
         style = "Simple, tail_width=2, head_width=10, head_length=10"
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle=style, color='purple', alpha=0.8, zorder=5))
 
-    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off')
+    # MODIFICA QUI: Allargata la visuale (zoom out)
+    ax.set_xlim(-28, 28); ax.set_ylim(-45, 38); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
 
     st.markdown("### 📊 Analisi Dinamica")
