@@ -43,24 +43,42 @@ def reset_pivot():
 
 # --- 1. SOLUTORE SLOW SIDE STEP (GEOMETRICO) ---
 def apply_slow_side_step(direction):
+    """
+    CORREZIONE: Calcola angoli individuali per ogni motore basandosi sulla 
+    posizione reale (X, Y) del Pivot Point per garantire momento nullo.
+    """
+    pp_x = st.session_state.pp_x
     pp_y = st.session_state.pp_y
-    longitudinal_dist = pp_y - POS_THRUSTERS_Y
+    dy = pp_y - POS_THRUSTERS_Y
     
     try:
-        alpha_rad = np.arctan2(POS_THRUSTERS_X, longitudinal_dist)
-        alpha_deg = np.degrees(alpha_rad) % 360
+        if abs(dy) < 0.1:
+            st.error("Errore: PP troppo vicino alla linea dei motori.")
+            return
+
+        # Distanza trasversale relativa di ogni motore dal PP
+        # Motore SX è a -2.7, Motore DX è a +2.7
+        dx_sx = pp_x - (-POS_THRUSTERS_X)
+        dx_dx = pp_x - POS_THRUSTERS_X
+        
+        # Angoli necessari per puntare al PP
+        ang_sx = np.degrees(np.arctan2(dx_sx, dy))
+        ang_dx = np.degrees(np.arctan2(dx_dx, dy))
         
         if direction == "DRITTA":
-            a1_set = alpha_deg
-            a2_set = 180 - alpha_deg
+            # Per andare a DRITTA: componenti trasversali positive
+            a1_set = ang_sx
+            a2_set = 180 + ang_dx
         else: # SINISTRA
-            a1_set = 180 + alpha_deg
-            a2_set = 360 - alpha_deg
+            # Per andare a SINISTRA: componenti trasversali negative
+            a1_set = 180 + ang_sx
+            a2_set = ang_dx
             
         st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
         st.session_state.p2 = 50
         st.session_state.a2 = int(round(a2_set % 360))
+        
     except Exception as e:
         st.error(f"Errore calcolo Slow: {e}")
 
@@ -80,7 +98,6 @@ def apply_fast_side_step(direction):
             dx = x_slave - x_int
             dy = POS_THRUSTERS_Y - pp_y
             
-            # Controllo per evitare crash se dy è zero (PP esattamente sui motori)
             if abs(dy) < 0.01:
                 st.error("Errore: Il Pivot Point è troppo vicino alla linea dei motori.")
                 return
@@ -88,7 +105,6 @@ def apply_fast_side_step(direction):
             a_slave = np.degrees(np.arctan2(dx, dy)) % 360
             denom = np.cos(np.radians(a_slave))
             
-            # Controllo divisione per zero
             if abs(denom) < 0.001:
                 st.error("Errore: Geometria impossibile (Slave a 90°/270°). Sposta il Pivot Point.")
                 return
