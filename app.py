@@ -5,7 +5,7 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.19", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.20", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
@@ -44,7 +44,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.19 (UI Update & Clean Graphics)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.20 (Icon Update)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -64,7 +64,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 2. Preset Longitudinali (RIORGANIZZATI)
+    # 2. Preset Longitudinali
     st.markdown("### ↕️ Longitudinali")
     
     # Riga 1: AVANTI
@@ -83,10 +83,10 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 3. Preset Laterali (RIORGANIZZATI)
+    # 3. Preset Laterali (ICONE AGGIORNATE)
     st.markdown("### ↔️ Traslazioni (Side Step)")
     
-    # Intestazioni colonne
+    # Intestazioni colonne colorate
     h1, h2 = st.columns(2)
     h1.markdown("<div style='text-align: center; color: #ff4b4b;'><b>Verso SX</b></div>", unsafe_allow_html=True)
     h2.markdown("<div style='text-align: center; color: #4CAF50;'><b>Verso DX</b></div>", unsafe_allow_html=True)
@@ -94,20 +94,20 @@ with st.sidebar:
     # Riga 1: FAST
     row_fast1, row_fast2 = st.columns(2)
     with row_fast1:
-        # Fast Sinistra: SX 145° (50%) | DX 315° (58%)
-        st.button("⚡ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
+        # Fast Sinistra: Usiamo freccia sinistra
+        st.button("⬅️ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
     with row_fast2:
-        # Fast Dritta: SX 045° (58%) | DX 215° (50%)
-        st.button("⚡ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
+        # Fast Dritta: Usiamo freccia destra
+        st.button("➡️ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
 
     # Riga 2: SLOW
     row_slow1, row_slow2 = st.columns(2)
     with row_slow1:
-        # Slow Sinistra (50%): SX 189° | DX 351°
-        st.button("🐢 Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
+        # Slow Sinistra: Usiamo freccia sinistra
+        st.button("⬅️ Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
     with row_slow2:
-        # Slow Dritta (50%): SX 009° | DX 171°
-        st.button("🐢 Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
+        # Slow Dritta: Usiamo freccia destra
+        st.button("➡️ Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
 
 # --- CALCOLI FISICI ---
 pos_sx = np.array([-2.7, -12.0])
@@ -127,7 +127,6 @@ F_sx = np.array([u1, v1])
 F_dx = np.array([u2, v2])
 
 # --- LOGICA INTERFERENZA ---
-# Manteniamo la logica di interferenza ma senza disegnare il braccio
 efficiency_factor = 1.0
 warning_interference = False
 
