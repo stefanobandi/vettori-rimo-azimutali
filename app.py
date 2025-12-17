@@ -25,7 +25,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione / Centro Ponderato
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Ibrida (Intersezione < 50m / Centro Ponderato)
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -37,7 +37,6 @@ with st.sidebar:
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
     c2.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
-    
     st.markdown("### ↕️ Longitudinali")
     cf1, cf2 = st.columns(2)
     cf1.button("Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
@@ -45,7 +44,6 @@ with st.sidebar:
     ca1, ca2 = st.columns(2)
     ca1.button("Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
     ca2.button("Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
-    
     st.markdown("---")
     st.markdown("### ↔️ Side Step")
     r1, r2 = st.columns(2)
@@ -66,11 +64,20 @@ warning_int = check_wash_hit(pos_sx, -F_sx, pos_dx) or check_wash_hit(pos_dx, -F
 eff = 0.8 if warning_int else 1.0
 res_u, res_v = (F_sx[0]+F_dx[0])*eff, (F_sx[1]+F_dx[1])*eff
 res_ton = np.sqrt(res_u**2 + res_v**2)
-
 M_tm = ((pos_sx-pp_pos)[0]*F_sx[1] - (pos_sx-pp_pos)[1]*F_sx[0] + (pos_dx-pp_pos)[0]*F_dx[1] - (pos_dx-pp_pos)[1]*F_dx[0]) * eff
 M_knm = M_tm * G_ACCEL
 
-# --- LAYOUT ---
+# --- LOGICA ORIGINE RISULTANTE CON SOGLIA 50m ---
+inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
+use_weighted = True
+
+if inter is not None:
+    # Calcola la distanza dell'intersezione dal centro del rimorchiatore (0,0)
+    dist_inter = np.linalg.norm(inter)
+    if dist_inter <= 50.0:
+        use_weighted = False
+
+# --- LAYOUT GRAFICO ---
 col_l, col_c, col_r = st.columns([1, 2, 1])
 with col_l:
     st.slider("Potenza SX (%)", 0, 100, key="p1")
@@ -91,46 +98,24 @@ with col_c:
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # --- LOGICA ORIGINE VETTORE RISULTANTE ---
-    inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
-    
-    if inter is not None:
-        # 1. Caso Intersezione (Vettori convergenti)
+    if not use_weighted:
         origin_res = inter
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g--', lw=1, alpha=0.3)
     else:
-        # 2. Caso Parallelo: Centro di Spinta Ponderato (Weighted Thrust Center)
         if (ton1 + ton2) > 0.1:
-            # Calcola la posizione X pesata tra i due motori
             w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
             origin_res = np.array([w_x, POS_THRUSTERS_Y])
         else:
             origin_res = np.array([0.0, POS_THRUSTERS_Y])
 
-    # Vettori Motori
     sc = 0.4
     ax.arrow(pos_sx[0], pos_sx[1], F_sx[0]*sc, F_sx[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx[0]*sc, F_dx[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
-    
-    # Vettore Risultante (Origine dinamica)
     ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
     
-    # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
-    
-    # Freccia Momento
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         style = "Simple, tail_width=2, head_width=10, head_length=10"
-        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle=style, color='purple', alpha=0.8, zorder=5))
-
-    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off')
-    st.pyplot(fig)
-
-    st.markdown("### 📊 Analisi Dinamica")
-    if warning_int: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Tiro Totale", f"{res_ton:.1f} t")
-    m2.metric("Direzione", f"{np.degrees(np.arctan2(res_u, res_v))%360:.0f}°")
-    m3.metric("Rotazione", "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE", delta=f"{abs(M_knm):.0f} kNm", delta_color="off")
+        ax.add_patch(FancyArrowPatch(p_s,
