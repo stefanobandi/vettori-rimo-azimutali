@@ -282,13 +282,17 @@ with col_center:
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
 
-    # --- AGGIUNTA: CERCHI AZIMUTALI (Diametro 2m -> Raggio 1m) ---
-    circle_sx = plt.Circle(pos_sx, 1.0, color='red', fill=False, lw=1, ls='-', alpha=0.5, zorder=2)
-    circle_dx = plt.Circle(pos_dx, 1.0, color='green', fill=False, lw=1, ls='-', alpha=0.5, zorder=2)
+    # --- AGGIUNTA: CERCHI AZIMUTALI (Diametro 4m -> Raggio 2m) ---
+    circle_sx = plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
+    circle_dx = plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
     ax.add_patch(circle_sx)
     ax.add_patch(circle_dx)
 
-    # --- AGGIUNTA: PROLUNGAMENTI CHE SI FERMANO ALL'INTERSEZIONE ---
+    # --- AGGIUNTA: SUGGERIMENTO ELICA (LINEA RADIALE) ---
+    ax.plot([pos_sx[0], pos_sx[0] + 2.0 * np.sin(rad1)], [pos_sx[1], pos_sx[1] + 2.0 * np.cos(rad1)], color='black', lw=2, zorder=3)
+    ax.plot([pos_dx[0], pos_dx[0] + 2.0 * np.sin(rad2)], [pos_dx[1], pos_dx[1] + 2.0 * np.cos(rad2)], color='black', lw=2, zorder=3)
+
+    # --- PROLUNGAMENTI CHE SI FERMANO ALL'INTERSEZIONE ---
     if intersection is not None:
         ax.plot([pos_sx[0], intersection[0]], [pos_sx[1], intersection[1]], color='red', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
         ax.plot([pos_dx[0], intersection[0]], [pos_dx[1], intersection[1]], color='green', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
