@@ -5,13 +5,12 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.18", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.19", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
 
 # --- GESTIONE SESSION STATE ---
-# Inizializza le variabili se non esistono
 defaults = {
     "p1": 50, "a1": 0,    # Motore SX
     "p2": 50, "a2": 0,    # Motore DX
@@ -45,7 +44,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.18 (Full Side Step Suite + Physics Upgrade)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.19 (UI Update & Clean Graphics)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -65,34 +64,48 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # 2. Preset Longitudinali
+    # 2. Preset Longitudinali (RIORGANIZZATI)
     st.markdown("### ↕️ Longitudinali")
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
+    
+    # Riga 1: AVANTI
+    col_fwd1, col_fwd2 = st.columns(2)
+    with col_fwd1:
         st.button("Tutta AVANTI", on_click=set_engine_state, args=(100, 0, 100, 0), use_container_width=True)
-        st.button("Mezza INDIETRO", on_click=set_engine_state, args=(50, 180, 50, 180), use_container_width=True)
-    with col_l2:
+    with col_fwd2:
         st.button("Mezza AVANTI", on_click=set_engine_state, args=(50, 0, 50, 0), use_container_width=True)
+        
+    # Riga 2: INDIETRO
+    col_aft1, col_aft2 = st.columns(2)
+    with col_aft1:
         st.button("Tutta INDIETRO", on_click=set_engine_state, args=(100, 180, 100, 180), use_container_width=True)
+    with col_aft2:
+        st.button("Mezza INDIETRO", on_click=set_engine_state, args=(50, 180, 50, 180), use_container_width=True)
 
     st.markdown("---")
 
-    # 3. Preset Laterali (Side Step Custom)
+    # 3. Preset Laterali (RIORGANIZZATI)
     st.markdown("### ↔️ Traslazioni (Side Step)")
     
-    col_ss1, col_ss2 = st.columns(2)
-    
-    with col_ss1:
-        st.markdown("**Verso SINISTRA**")
+    # Intestazioni colonne
+    h1, h2 = st.columns(2)
+    h1.markdown("<div style='text-align: center; color: #ff4b4b;'><b>Verso SX</b></div>", unsafe_allow_html=True)
+    h2.markdown("<div style='text-align: center; color: #4CAF50;'><b>Verso DX</b></div>", unsafe_allow_html=True)
+
+    # Riga 1: FAST
+    row_fast1, row_fast2 = st.columns(2)
+    with row_fast1:
         # Fast Sinistra: SX 145° (50%) | DX 315° (58%)
         st.button("⚡ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
-        # Slow Sinistra (50%): SX 189° | DX 351°
-        st.button("🐢 Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
-
-    with col_ss2:
-        st.markdown("**Verso DRITTA**")
+    with row_fast2:
         # Fast Dritta: SX 045° (58%) | DX 215° (50%)
         st.button("⚡ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
+
+    # Riga 2: SLOW
+    row_slow1, row_slow2 = st.columns(2)
+    with row_slow1:
+        # Slow Sinistra (50%): SX 189° | DX 351°
+        st.button("🐢 Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
+    with row_slow2:
         # Slow Dritta (50%): SX 009° | DX 171°
         st.button("🐢 Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
 
@@ -113,8 +126,8 @@ u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
 F_sx = np.array([u1, v1])
 F_dx = np.array([u2, v2])
 
-# --- LOGICA INTERFERENZA (NEW) ---
-# Controlliamo se la scia di un motore colpisce l'altro
+# --- LOGICA INTERFERENZA ---
+# Manteniamo la logica di interferenza ma senza disegnare il braccio
 efficiency_factor = 1.0
 warning_interference = False
 
@@ -125,16 +138,14 @@ def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_dir = wash_vec / wash_len
     to_target = target_pos - origin
     
-    # Proiezione
     proj_length = np.dot(to_target, wash_dir)
     
-    if proj_length > 0: # Il target è "a valle"
+    if proj_length > 0: 
         perp_dist = np.linalg.norm(to_target - (proj_length * wash_dir))
         if perp_dist < threshold:
             return True
     return False
 
-# Wash (flusso) va in direzione opposta alla spinta
 wash_sx = -F_sx
 wash_dx = -F_dx
 
@@ -146,12 +157,10 @@ if hit_sx_to_dx or hit_dx_to_sx:
     warning_interference = True
 
 # --- RISULTANTE E MOMENTI ---
-# Applichiamo l'efficienza
 res_u = (u1 + u2) * efficiency_factor
 res_v = (v1 + v2) * efficiency_factor
 res_ton = np.sqrt(res_u**2 + res_v**2)
 
-# Momento (applicando l'efficienza anche qui)
 r_sx = pos_sx - pp_pos
 r_dx = pos_dx - pp_pos
 
@@ -262,7 +271,7 @@ with col_center:
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # 2. FRECCIA MOMENTO (ROTATION)
+    # 2. FRECCIA MOMENTO
     if abs(Total_Moment_tm) > 1:
         arc_color = '#800080'
         arrow_y_pos = 24.0 
@@ -293,40 +302,11 @@ with col_center:
         ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
 
-    # 4. VISUALIZZAZIONE BRACCIO DI LEVA (NEW)
-    if res_ton > 1.0:
-        rv_norm = np.array([res_u, res_v]) / (np.linalg.norm([res_u, res_v]) + 1e-6)
-        pp_to_origin = origin_res - pp_pos
-        projection_len = np.dot(pp_to_origin, rv_norm)
-        closest_point_on_line = origin_res - (projection_len * rv_norm)
-        
-        lever_arm_vec = closest_point_on_line - pp_pos
-        lever_arm_len = np.linalg.norm(lever_arm_vec)
-        
-        if lever_arm_len > 0.1:
-            # Linea viola del braccio
-            ax.plot([pp_pos[0], closest_point_on_line[0]], 
-                    [pp_pos[1], closest_point_on_line[1]], 
-                    color='purple', linestyle='--', linewidth=1.5, zorder=3)
-            
-            # Etichetta con sfondo
-            mid_x = (pp_pos[0] + closest_point_on_line[0]) / 2
-            mid_y = (pp_pos[1] + closest_point_on_line[1]) / 2
-            ax.text(mid_x, mid_y, f" {lever_arm_len:.1f}m ", 
-                    color='purple', fontsize=9, fontweight='bold', 
-                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
-            
-            # Estensione retta d'azione
-            back_point = origin_res - rv_norm * 20
-            fwd_point = origin_res + rv_norm * 20
-            ax.plot([back_point[0], fwd_point[0]], [back_point[1], fwd_point[1]], 
-                    color='blue', linestyle=':', alpha=0.2, linewidth=1)
-
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
     st.pyplot(fig)
     plt.close(fig)
     
-    # 5. Analisi Dinamica e Warning
+    # 4. Analisi Dinamica e Warning
     st.markdown("### 📊 Analisi Dinamica")
     
     # WARNING BOX
