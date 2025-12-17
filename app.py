@@ -51,24 +51,28 @@ def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y # Distanza longitudinale
     
+    # Considero le coordinate X diverse (distanza dalla mezzeria)
     x_sx = -POS_THRUSTERS_X
     x_dx = POS_THRUSTERS_X
-    dist_x_calcolo = (x_dx - x_sx) / 2 # Semidistanza (2.7)
+    
+    # Per avere spinta 090 e momento nullo con potenze uguali, 
+    # l'intersezione deve avvenire a X=0 (mezzeria tra i motori).
+    # La distanza trasversale per il calcolo dell'angolo è la semidistanza tra i motori.
+    dist_x_calcolo = (x_dx - x_sx) / 2 # Risulta 2.7
     
     try:
+        # Calcolo l'angolo affinché le linee d'azione si incrocino a Y = pp_y
         alpha_rad = np.arctan2(dist_x_calcolo, dy)
         alpha_deg = np.degrees(alpha_rad)
         
         if direction == "DRITTA":
+            # Vettore risultante verso 090
             a1_set = alpha_deg
             a2_set = 180 - alpha_deg
-            # Banner Motore Slave (DX)
-            st.success(f"✅ SLOW DRITTA - Motore Slave (DX): Azimut {int(round(a2_set % 360))}°, Potenza 50%")
         else: # SINISTRA
+            # Vettore risultante verso 270
             a1_set = 180 + alpha_deg
             a2_set = 360 - alpha_deg
-            # Banner Motore Slave (SX)
-            st.success(f"✅ SLOW SINISTRA - Motore Slave (SX): Azimut {int(round(a1_set % 360))}°, Potenza 50%")
             
         st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
@@ -106,14 +110,15 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
-                # Banner Motore Slave (DX)
-                st.success(f"🚀 FAST DRITTA - Motore Slave (DX): Azimut {int(round(a_slave))}°, Potenza {int(round(p_slave))}%")
+                st.toast(f"Fast Dritta calcolato: Slave {int(round(p_slave))}%", icon="⚡")
             else:
                 st.error(f"Potenza fuori limite: Richiesto {int(p_slave)}% sul motore DX (Range: 1-100%)")
 
         else: # SINISTRA
-            a_drive, p_drive = 315.0, 50.0
-            x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
+            a_drive = 315.0
+            p_drive = 50.0
+            x_drive = POS_THRUSTERS_X
+            x_slave = -POS_THRUSTERS_X
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
             dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
             
@@ -133,8 +138,7 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
                 st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
-                # Banner Motore Slave (SX)
-                st.success(f"🚀 FAST SINISTRA - Motore Slave (SX): Azimut {int(round(a_slave))}°, Potenza {int(round(p_slave))}%")
+                st.toast(f"Fast Sinistra calcolato: Slave {int(round(p_slave))}%", icon="⚡")
             else:
                 st.error(f"Potenza fuori limite: Richiesto {int(p_slave)}% sul motore SX (Range: 1-100%)")
     except Exception as e:
@@ -146,7 +150,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.25 (Side Step Physics Solver)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.25 (Fast Side Step Physics Solver)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -194,7 +198,8 @@ rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 u1, v1 = ton1 * np.sin(rad1), ton1 * np.cos(rad1)
 u2, v2 = ton2 * np.sin(rad2), ton2 * np.cos(rad2)
 
-F_sx, F_dx = np.array([u1, v1]), np.array([u2, v2])
+F_sx = np.array([u1, v1])
+F_dx = np.array([u2, v2])
 
 # Controllo interferenza
 efficiency_factor = 1.0
@@ -210,14 +215,18 @@ def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
         if perp_dist < threshold: return True
     return False
 
-if check_wash_hit(pos_sx, -F_sx, pos_dx) or check_wash_hit(pos_dx, -F_dx, pos_sx):
-    efficiency_factor, warning_interference = 0.8, True
+wash_sx = -F_sx
+wash_dx = -F_dx
+if check_wash_hit(pos_sx, wash_sx, pos_dx) or check_wash_hit(pos_dx, wash_dx, pos_sx):
+    efficiency_factor = 0.8
+    warning_interference = True
 
 res_u = (u1 + u2) * efficiency_factor
 res_v = (v1 + v2) * efficiency_factor
 res_ton = np.sqrt(res_u**2 + res_v**2)
 
-r_sx, r_dx = pos_sx - pp_pos, pos_dx - pp_pos
+r_sx = pos_sx - pp_pos
+r_dx = pos_dx - pp_pos
 M_sx_tm = (r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]) * efficiency_factor
 M_dx_tm = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * efficiency_factor
 Total_Moment_tm = M_sx_tm + M_dx_tm
@@ -225,66 +234,127 @@ Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
 # Centro di spinta (Intersezione o Ponderata)
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
-    th1, th2 = np.radians(90 - angle1_deg), np.radians(90 - angle2_deg)
-    v1, v2 = np.array([np.cos(th1), np.sin(th1)]), np.array([np.cos(th2), np.sin(th2)])
+    th1 = np.radians(90 - angle1_deg)
+    th2 = np.radians(90 - angle2_deg)
+    v1 = np.array([np.cos(th1), np.sin(th1)])
+    v2 = np.array([np.cos(th2), np.sin(th2)])
     matrix = np.column_stack((v1, -v2))
+    delta = p2 - p1
     if abs(np.linalg.det(matrix)) < 1e-4: return None
-    t = np.linalg.solve(matrix, p2 - p1)[0]
+    t = np.linalg.solve(matrix, delta)[0]
     return p1 + t * v1
 
-intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2) if ton1 > 0.1 and ton2 > 0.1 else None
-origin_res = intersection if intersection is not None else np.array([(ton1*pos_sx[0] + ton2*pos_dx[0])/(ton1+ton2+1e-6), -12.0])
+intersection = None
+if ton1 > 0.1 and ton2 > 0.1:
+    intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
+
+origin_res = np.array([0.0, -12.0])
+if intersection is not None:
+    origin_res = intersection
+elif ton1 + ton2 > 0.1:
+    w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
+    origin_res = np.array([w_x, -12.0])
 
 # --- LAYOUT VISIVO ---
 col_sx, col_center, col_dx = st.columns([1, 2, 1], gap="medium")
+
+def plot_clock(azimuth_deg, color):
+    fig, ax = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    ax.set_yticks([]); ax.set_xticks(np.radians([0, 90, 180, 270]))
+    ax.set_xticklabels(['0', '90', '180', '270'])
+    ax.arrow(np.radians(azimuth_deg), 0, 0, 0.9, color=color, width=0.15, head_width=0, length_includes_head=True)
+    ax.grid(True, alpha=0.3)
+    fig.patch.set_alpha(0)
+    return fig
 
 with col_sx:
     st.markdown("<h3 style='text-align: center; color: #ff4b4b;'>PORT (SX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza SX (%)", 0, 100, step=1, key="p1")
     st.metric("Spinta SX", f"{ton1:.1f} t")
     st.slider("Azimut SX (°)", 0, 360, step=1, key="a1")
+    fig_sx = plot_clock(st.session_state.a1, 'red')
+    st.pyplot(fig_sx, use_container_width=False); plt.close(fig_sx)
 
 with col_dx:
     st.markdown("<h3 style='text-align: center; color: #4CAF50;'>STBD (DX)</h3>", unsafe_allow_html=True)
     st.slider("Potenza DX (%)", 0, 100, step=1, key="p2")
     st.metric("Spinta DX", f"{ton2:.1f} t")
     st.slider("Azimut DX (°)", 0, 360, step=1, key="a2")
+    fig_dx = plot_clock(st.session_state.a2, 'green')
+    st.pyplot(fig_dx, use_container_width=False); plt.close(fig_dx)
 
 with col_center:
     with st.expander("📍 Configurazione Pivot Point", expanded=True):
-        st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.1, key="pp_y")
-        st.slider("Trasversale (X)", -5.0, 5.0, step=0.1, key="pp_x")
+        c1, c2 = st.columns(2)
+        with c1: st.slider("Longitudinale (Y)", -16.0, 16.0, step=0.1, key="pp_y")
+        with c2: st.slider("Trasversale (X)", -5.0, 5.0, step=0.1, key="pp_x")
 
     fig, ax = plt.subplots(figsize=(8, 10))
-    hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
-    path_data = [(Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))]
-    codes, verts = zip(*path_data); ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
+    hw = 5.85; stern = -16.25; bow_tip = 16.25; shoulder = 8.0
+    path_data = [
+        (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
+        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
+        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
+        (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
+    ]
+    codes, verts = zip(*path_data)
+    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
     
-    # Cerchi e Elica
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1.5, alpha=0.6, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1.5, alpha=0.6, zorder=2))
+    # Fender
+    fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
+    f_codes, f_verts = zip(*fender_data)
+    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
+
+    # --- AGGIUNTA: CERCHI AZIMUTALI ---
+    circle_sx = plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
+    circle_dx = plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1.5, ls='-', alpha=0.6, zorder=2)
+    ax.add_patch(circle_sx)
+    ax.add_patch(circle_dx)
+
+    # --- AGGIUNTA: SUGGERIMENTO ELICA ---
     ax.plot([pos_sx[0], pos_sx[0] + 2.0 * np.sin(rad1)], [pos_sx[1], pos_sx[1] + 2.0 * np.cos(rad1)], color='black', lw=2, zorder=3)
     ax.plot([pos_dx[0], pos_dx[0] + 2.0 * np.sin(rad2)], [pos_dx[1], pos_dx[1] + 2.0 * np.cos(rad2)], color='black', lw=2, zorder=3)
 
-    # Prolungamenti e PP
+    # --- PROLUNGAMENTI ---
     if intersection is not None:
         ax.plot([pos_sx[0], intersection[0]], [pos_sx[1], intersection[1]], color='red', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
         ax.plot([pos_dx[0], intersection[0]], [pos_dx[1], intersection[1]], color='green', linestyle='--', lw=1.2, alpha=0.4, zorder=3)
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
 
-    # Vettori
+    # PP
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
+
+    # Arco Rotazione
+    if abs(Total_Moment_tm) > 1:
+        arc_color = '#800080'; arrow_y_pos = 24.0 
+        p_start = (5.0, arrow_y_pos) if Total_Moment_tm > 0 else (-5.0, arrow_y_pos)
+        p_end = (-5.0, arrow_y_pos) if Total_Moment_tm > 0 else (5.0, arrow_y_pos)
+        connection = "arc3,rad=0.3" if Total_Moment_tm > 0 else "arc3,rad=-0.3"
+        style = f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8"
+        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
+
+    # Vettori Motori
     scale = 0.4
-    ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, zorder=4)
-    ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, zorder=4)
+    ax.arrow(pos_sx[0], pos_sx[1], u1*scale, v1*scale, head_width=1.2, fc='red', ec='red', width=0.25, alpha=0.8, zorder=4)
+    ax.arrow(pos_dx[0], pos_dx[1], u2*scale, v2*scale, head_width=1.2, fc='green', ec='green', width=0.25, alpha=0.8, zorder=4)
+
+    # Vettore Risultante
     ax.arrow(origin_res[0], origin_res[1], res_u*scale, res_v*scale, head_width=2.0, head_length=2.0, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
 
-    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off'); st.pyplot(fig); plt.close(fig)
+    ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
+    st.pyplot(fig); plt.close(fig)
     
     # Dashboard
     st.markdown("### 📊 Analisi Dinamica")
     if warning_interference: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
+    
     m1, m2, m3 = st.columns(3)
+    deg_res = np.degrees(np.arctan2(res_u, res_v)) % 360
     m1.metric("Tiro Totale", f"{res_ton:.1f} t")
-    m2.metric("Direzione", f"{np.degrees(np.arctan2(res_u, res_v)) % 360:.0f}°")
-    rot = "STABILE" if abs(Total_Moment_tm) < 2.0 else ("SINISTRA" if Total_Moment_tm > 0 else "DRITTA")
-    m3.metric("Rotazione", rot, delta=f"{abs(Total_Moment_knm):.0f} kNm", delta_color="off")
+    m2.metric("Direzione", f"{deg_res:.0f}°")
+    
+    dir_rot = "STABILE"
+    if abs(Total_Moment_tm) > 2.0: dir_rot = "SINISTRA" if Total_Moment_tm > 0 else "DRITTA"
+    m3.metric("Rotazione", dir_rot, delta=f"{abs(Total_Moment_knm):.0f} kNm", delta_color="off")
