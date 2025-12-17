@@ -5,10 +5,12 @@ from matplotlib.patches import PathPatch, FancyArrowPatch
 from matplotlib.path import Path
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="ASD Centurion V5.20", layout="wide")
+st.set_page_config(page_title="ASD Centurion V5.21", layout="wide")
 
 # --- COSTANTI FISICHE ---
 G_ACCEL = 9.80665  # Accelerazione gravità per conversione tm -> kNm
+POS_THRUSTERS_Y = -12.0
+POS_THRUSTERS_X = 2.7
 
 # --- GESTIONE SESSION STATE ---
 defaults = {
@@ -38,13 +40,67 @@ def reset_pivot():
     st.session_state.pp_x = 0.0
     st.session_state.pp_y = 5.42
 
+# --- FUNZIONE CALCOLO DINAMICO (BALISTICA) ---
+def apply_dynamic_side_step(direction):
+    """
+    Calcola l'angolo dei motori basandosi sulla posizione attuale del Pivot Point
+    per garantire rotazione zero e traslazione pura a 90°.
+    """
+    pp_y = st.session_state.pp_y
+    
+    # Distanza longitudinale tra PP e linea motori
+    # Se PP è a 5.42 e motori a -12.0, la distanza è 17.42
+    longitudinal_dist = pp_y - POS_THRUSTERS_Y
+    
+    # Calcolo angolo alpha (angolo tra asse longitudinale e vettore spinta)
+    # Usiamo arctan2 per evitare divisioni per zero e gestire i quadranti
+    # Se longitudinal_dist è 0, arctan2 restituisce pi/2 (90 gradi) -> corretto
+    try:
+        alpha_rad = np.arctan2(POS_THRUSTERS_X, longitudinal_dist)
+        alpha_deg = np.degrees(alpha_rad)
+        
+        # Normalizziamo l'angolo tra 0 e 360
+        alpha_deg = alpha_deg % 360
+        
+        if direction == "DRITTA":
+            # Configurazione Simmetrica per andare a DRITTA
+            # SX: Tira in avanti/destra (angolo alpha)
+            # DX: Tira indietro/destra (angolo 180 - alpha)
+            a1_set = alpha_deg
+            a2_set = 180 - alpha_deg
+            msg = f"Calcolo Balistico OK: Angolo {alpha_deg:.1f}° su PP {pp_y}m"
+            
+        elif direction == "SINISTRA":
+            # Configurazione Simmetrica per andare a SINISTRA
+            # SX: Tira indietro/sinistra (360 - alpha)
+            # DX: Tira avanti/sinistra (180 + alpha)
+            a1_set = 360 - alpha_deg
+            a2_set = 180 + alpha_deg
+            msg = f"Calcolo Balistico OK: Angolo {alpha_deg:.1f}° su PP {pp_y}m"
+            
+        # Normalizzazione finale output 0-360
+        a1_set = a1_set % 360
+        a2_set = a2_set % 360
+        
+        # Applicazione
+        st.session_state.p1 = 50
+        st.session_state.a1 = int(a1_set)
+        st.session_state.p2 = 50
+        st.session_state.a2 = int(a2_set)
+        
+        # Feedback utente (toast message)
+        st.toast(msg, icon="📐")
+
+    except Exception as e:
+        st.error(f"Errore nel calcolo della soluzione: {e}")
+
 # --- HEADER ---
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.20 (Icon Update)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.21 (Dynamic Ballistic Solver)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -83,7 +139,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 3. Preset Laterali (ICONE AGGIORNATE)
+    # 3. Preset Laterali (CON SOLUTORE DINAMICO PER SLOW)
     st.markdown("### ↔️ Traslazioni (Side Step)")
     
     # Intestazioni colonne colorate
@@ -91,27 +147,25 @@ with st.sidebar:
     h1.markdown("<div style='text-align: center; color: #ff4b4b;'><b>Verso SX</b></div>", unsafe_allow_html=True)
     h2.markdown("<div style='text-align: center; color: #4CAF50;'><b>Verso DX</b></div>", unsafe_allow_html=True)
 
-    # Riga 1: FAST
+    # Riga 1: FAST (Rimangono preset fissi "aggressivi")
     row_fast1, row_fast2 = st.columns(2)
     with row_fast1:
-        # Fast Sinistra: Usiamo freccia sinistra
         st.button("⬅️ Fast SINISTRA", on_click=set_engine_state, args=(50, 145, 58, 315), use_container_width=True)
     with row_fast2:
-        # Fast Dritta: Usiamo freccia destra
         st.button("➡️ Fast DRITTA", on_click=set_engine_state, args=(58, 45, 50, 215), use_container_width=True)
 
-    # Riga 2: SLOW
+    # Riga 2: SLOW (Dinamici)
     row_slow1, row_slow2 = st.columns(2)
     with row_slow1:
-        # Slow Sinistra: Usiamo freccia sinistra
-        st.button("⬅️ Slow SINISTRA", on_click=set_engine_state, args=(50, 189, 50, 351), use_container_width=True)
+        # Chiama la funzione dinamica
+        st.button("⬅️ Slow SINISTRA", on_click=apply_dynamic_side_step, args=("SINISTRA",), use_container_width=True)
     with row_slow2:
-        # Slow Dritta: Usiamo freccia destra
-        st.button("➡️ Slow DRITTA", on_click=set_engine_state, args=(50, 9, 50, 171), use_container_width=True)
+        # Chiama la funzione dinamica
+        st.button("➡️ Slow DRITTA", on_click=apply_dynamic_side_step, args=("DRITTA",), use_container_width=True)
 
 # --- CALCOLI FISICI ---
-pos_sx = np.array([-2.7, -12.0])
-pos_dx = np.array([2.7, -12.0])
+pos_sx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y])
+pos_dx = np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
 # Tonnellate base
