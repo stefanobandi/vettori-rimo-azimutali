@@ -66,52 +66,33 @@ def apply_slow_side_step(direction):
 
 # --- 2. SOLUTORE FAST SIDE STEP (RICHIESTA UTENTE) ---
 def apply_fast_side_step(direction):
-    """
-    Applica la logica di intersezione vettoriale sul Pivot Point.
-    - Dritta: Motore SX (Drive) fisso a 045° / 50%. Calcola DX.
-    - Sinistra: Motore DX (Drive) fisso a 315° / 50%. Calcola SX.
-    """
     pp_y = st.session_state.pp_y
-    dist_y = pp_y - POS_THRUSTERS_Y # Distanza longitudinale tra propulsori e PP
+    dist_y = pp_y - POS_THRUSTERS_Y 
     
     if direction == "DRITTA":
-        # Motore SX (Drive) impostato dall'utente
         a_drive = 45.0
         p_drive = 50.0
         x_drive = -POS_THRUSTERS_X
         x_slave = POS_THRUSTERS_X
-        
-        # 1. Trovo la coordinata X del punto di intersezione sul PP
-        # x_int = x_drive + dist_y * tan(45°)
         x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
-        
-        # 2. Calcolo l'angolo del motore DX (Slave) affinché la linea d'azione passi per x_int
-        # Il vettore deve puntare via dal punto di intersezione
         dx = x_slave - x_int
         dy = POS_THRUSTERS_Y - pp_y
         a_slave = np.degrees(np.arctan2(dx, dy)) % 360
-        
-        # 3. Calcolo potenza per annullare la spinta longitudinale (Y)
-        # p_drive * cos(a_drive) + p_slave * cos(a_slave) = 0
         p_slave = -(p_drive * np.cos(np.radians(a_drive))) / np.cos(np.radians(a_slave))
         
-        # Applica allo stato
         st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
         st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
         st.toast(f"Fast Dritta calcolato: Slave a {int(round(a_slave))}° con {int(round(p_slave))}%", icon="⚡")
 
     else: # SINISTRA
-        # Motore DX (Drive) impostato simmetricamente a 315°
         a_drive = 315.0
         p_drive = 50.0
         x_drive = POS_THRUSTERS_X
         x_slave = -POS_THRUSTERS_X
-        
         x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
         dx = x_slave - x_int
         dy = POS_THRUSTERS_Y - pp_y
         a_slave = np.degrees(np.arctan2(dx, dy)) % 360
-        
         p_slave = -(p_drive * np.cos(np.radians(a_drive))) / np.cos(np.radians(a_slave))
         
         st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
@@ -124,7 +105,7 @@ st.markdown("""
 <div style='text-align: center;'>
     <p style='font-size: 18px; margin-bottom: 10px;'>Simulatore Didattico Vettoriale</p>
     <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton<br>
-    <span style='color: #666; font-size: 0.9em;'>Versione 5.25 (Fast Side Step Physics Solver)</span>
+    <span style='color: #666; font-size: 0.9em;'>Versione 5.30 (Action Line Visualization)</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -210,7 +191,7 @@ M_dx_tm = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * efficiency_factor
 Total_Moment_tm = M_sx_tm + M_dx_tm
 Total_Moment_knm = Total_Moment_tm * G_ACCEL
 
-# Centro di spinta (Intersezione o Ponderata)
+# Solutore Intersezione
 def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1 = np.radians(90 - angle1_deg)
     th2 = np.radians(90 - angle2_deg)
@@ -219,18 +200,18 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     matrix = np.column_stack((v1, -v2))
     delta = p2 - p1
     if abs(np.linalg.det(matrix)) < 1e-4: return None
-    t = np.linalg.solve(matrix, delta)[0]
-    return p1 + t * v1
+    try:
+        t = np.linalg.solve(matrix, delta)[0]
+        return p1 + t * v1
+    except: return None
 
 intersection = None
-if ton1 > 0.1 and ton2 > 0.1:
+if ton1 > 0.5 and ton2 > 0.5:
     intersection = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 
 origin_res = np.array([0.0, -12.0])
-logic_used = "B"
 if intersection is not None:
     origin_res = intersection
-    logic_used = "C"
 elif ton1 + ton2 > 0.1:
     w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2)
     origin_res = np.array([w_x, -12.0])
@@ -291,14 +272,19 @@ with col_center:
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     ax.text(st.session_state.pp_x + 0.6, st.session_state.pp_y, "PP", fontsize=11, weight='bold', zorder=10)
 
-    # Arco Rotazione
-    if abs(Total_Moment_tm) > 1:
-        arc_color = '#800080'; arrow_y_pos = 24.0 
-        p_start = (5.0, arrow_y_pos) if Total_Moment_tm > 0 else (-5.0, arrow_y_pos)
-        p_end = (-5.0, arrow_y_pos) if Total_Moment_tm > 0 else (5.0, arrow_y_pos)
-        connection = "arc3,rad=0.3" if Total_Moment_tm > 0 else "arc3,rad=-0.3"
-        style = f"Simple, tail_width={min(3, abs(Total_Moment_tm)/50)}, head_width=8, head_length=8"
-        ax.add_patch(FancyArrowPatch(posA=p_start, posB=p_end, connectionstyle=connection, arrowstyle=style, color=arc_color, alpha=0.8, zorder=5))
+    # --- MODIFICA: PROLUNGAMENTI VETTORI ---
+    if ton1 > 1.0:
+        line_len = 60 
+        ext_x = pos_sx[0] + line_len * np.sin(rad1)
+        ext_y = pos_sx[1] + line_len * np.cos(rad1)
+        ax.plot([pos_sx[0], ext_x], [pos_sx[1], ext_y], color='red', linestyle='--', lw=1, alpha=0.3, zorder=3)
+
+    if ton2 > 1.0:
+        line_len = 60
+        ext_x = pos_dx[0] + line_len * np.sin(rad2)
+        ext_y = pos_dx[1] + line_len * np.cos(rad2)
+        ax.plot([pos_dx[0], ext_x], [pos_dx[1], ext_y], color='green', linestyle='--', lw=1, alpha=0.3, zorder=3)
+    # ---------------------------------------
 
     # Vettori Motori
     scale = 0.4
@@ -311,7 +297,7 @@ with col_center:
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off') 
     st.pyplot(fig); plt.close(fig)
     
-    # Dashboard
+    # Dashboard Finale
     st.markdown("### 📊 Analisi Dinamica")
     if warning_interference: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
     
