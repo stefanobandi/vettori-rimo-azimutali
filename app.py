@@ -35,12 +35,17 @@ with st.sidebar:
     st.header("Comandi Globali")
     c1, c2 = st.columns(2)
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    c2.button("Reset Pivot", on_click=reset_pivot, use_container_width=True)
+    c2.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
+    
     st.markdown("### ↕️ Longitudinali")
     cf1, cf2 = st.columns(2)
     cf1.button("Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
-    cf2.button("Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
+    cf2.button("Mezza AVANTI", on_click=set_engine_state, args=(50,0,50,0), use_container_width=True)
+    ca1, ca2 = st.columns(2)
+    ca1.button("Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
+    ca2.button("Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
+    
     st.markdown("---")
     st.markdown("### ↔️ Side Step")
     r1, r2 = st.columns(2)
@@ -84,7 +89,7 @@ with col_c:
         st.slider("Trasversale (X)", -5.0, 5.0, key="pp_x")
 
     fig, ax = plt.subplots(figsize=(8, 10))
-    draw_static_elements(ax, pos_sx, pos_dx, rad1, rad2)
+    draw_static_elements(ax, pos_sx, pos_dx)
     
     # Prolungamenti
     inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -101,9 +106,12 @@ with col_c:
     ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4)
     
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    
+    # Freccia Momento (Corretta con punta)
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
-        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple", color='purple', alpha=0.8))
+        style = "Simple, tail_width=2, head_width=10, head_length=10"
+        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle=style, color='purple', alpha=0.8, zorder=5))
 
     ax.set_xlim(-20, 20); ax.set_ylim(-25, 30); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
