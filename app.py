@@ -9,7 +9,6 @@ from visualization import *
 
 st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
 
-# CSS responsive per visualizzazione mobile
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] {
@@ -38,7 +37,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale / Centro di Spinta Ponderato
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione / Centro Ponderato
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -113,7 +112,7 @@ with col_c:
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # 2) Disegno della scia (wash)
+    # Visualizzazione Wash
     draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
     draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
     
@@ -142,7 +141,6 @@ with col_c:
     st.pyplot(fig)
     st.markdown("### 📊 Analisi Dinamica")
     
-    # 3) Messaggi di interferenza aggiornati
     if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
     if wash_dx_hits_sx: st.error("⚠️ SX in scia del DX. Spinta SX ridotta -20% ⚠️")
     
