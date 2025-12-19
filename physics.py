@@ -7,16 +7,13 @@ def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
     dist_x_calcolo = POS_THRUSTERS_X 
-    
     try:
         alpha_rad = np.arctan2(dist_x_calcolo, dy)
         alpha_deg = np.degrees(alpha_rad)
-        
         if direction == "DRITTA":
             a1_set, a2_set = alpha_deg, 180 - alpha_deg
-        else: # SINISTRA
+        else:
             a1_set, a2_set = 180 + alpha_deg, 360 - alpha_deg
-            
         st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
         st.session_state.p2 = 50
@@ -41,10 +38,8 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Dritta calcolato: Slave {int(round(p_slave))}%", icon="⚡")
-            else:
-                st.error(f"Potenza fuori limite: {int(p_slave)}%")
-        else: # SINISTRA
+                st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
+        else:
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
@@ -57,7 +52,7 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
                 st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Sinistra calcolato: Slave {int(round(p_slave))}%", icon="⚡")
+                st.toast(f"Fast Sinistra: Slave {int(round(p_slave))}%", icon="⚡")
     except Exception as e:
         st.error(f"Errore geometrico: {e}")
 
@@ -76,7 +71,8 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     th1, th2 = np.radians(90 - angle1_deg), np.radians(90 - angle2_deg)
     v1, v2 = np.array([np.cos(th1), np.sin(th1)]), np.array([np.cos(th2), np.sin(th2)])
     matrix = np.column_stack((v1, -v2))
-    # Se il determinante è vicino a zero, le linee sono parallele
     if abs(np.linalg.det(matrix)) < 1e-4: return None
-    t = np.linalg.solve(matrix, p2 - p1)[0]
-    return p1 + t * v1
+    try:
+        t = np.linalg.solve(matrix, p2 - p1)[0]
+        return p1 + t * v1
+    except: return None
