@@ -93,8 +93,9 @@ res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
+# CALCOLO MOMENTO CORRETTO (FISSATO ERRORE F_dx_eff)
 M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
-        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx[0])
+        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm * G_ACCEL
 
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -151,6 +152,5 @@ with col_c:
     m1.metric("Tiro Tot.", f"{res_ton:.1f} t")
     m2.metric("Dir.", f"{direzione_nautica:.0f}°")
     
-    # Valore di rotazione abbreviato per sicurezza mobile
     rot_val = "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE"
     m3.metric("Rotazione", rot_val, delta=f"{abs(M_tm):.1f} tm", delta_color="off")
