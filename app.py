@@ -9,7 +9,7 @@ from visualization import *
 
 st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
 
-# CSS responsive per visualizzazione ottimale su dispositivi mobili (Pixel 8 Pro)
+# CSS responsive per visualizzazione mobile
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] {
@@ -18,12 +18,8 @@ st.markdown("""
         white-space: normal;
     }
     @media (max-width: 640px) {
-        [data-testid="stMetricValue"] {
-            font-size: 1.2rem !important;
-        }
-        [data-testid="stMetricLabel"] {
-            font-size: 0.8rem !important;
-        }
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,32 +68,23 @@ with st.sidebar:
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
-# Calcolo forze basate sui comandi
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 F_sx_set = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_set = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-# Verifica interferenza wash (selettiva)
 wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_set, pos_dx)
 wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_set, pos_sx)
 
-eff_sx = 0.8 if wash_dx_hits_sx else 1.0
-eff_dx = 0.8 if wash_sx_hits_dx else 1.0
+eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
+F_sx_eff, F_dx_eff = F_sx_set * eff_sx, F_dx_set * eff_dx
+ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
-# Applicazione efficienza
-F_sx_eff = F_sx_set * eff_sx
-F_dx_eff = F_dx_set * eff_dx
-ton1_eff = ton1_set * eff_sx
-ton2_eff = ton2_set * eff_dx
-
-# Calcolo risultante e direzione nautica
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
-# Calcolo momento (tm) e rotazione (kNm) con forze effettive
 M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
         (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm * G_ACCEL
@@ -122,8 +109,14 @@ with col_r:
 with col_c:
     with st.expander("📍 Pivot Point", expanded=True):
         st.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
+        st.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
+    
+    # 2) Disegno della scia (wash)
+    draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
+    draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
+    
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
@@ -149,12 +142,12 @@ with col_c:
     st.pyplot(fig)
     st.markdown("### 📊 Analisi Dinamica")
     
-    if wash_sx_hits_dx: st.error("⚠️ DX in scia SX (-20%)")
-    if wash_dx_hits_sx: st.error("⚠️ SX in scia DX (-20%)")
+    # 3) Messaggi di interferenza aggiornati
+    if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
+    if wash_dx_hits_sx: st.error("⚠️ SX in scia del DX. Spinta SX ridotta -20% ⚠️")
     
     m1, m2, m3 = st.columns(3)
     m1.metric("Tiro Tot.", f"{res_ton:.1f} t")
     m2.metric("Dir.", f"{direzione_nautica:.0f}°")
-    
     rot_val = "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE"
     m3.metric("Rotazione", rot_val, delta=f"{abs(M_tm):.1f} tm", delta_color="off")
