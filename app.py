@@ -9,7 +9,7 @@ from visualization import *
 
 st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
 
-# CSS Injection per evitare il troncamento del testo nelle metriche su mobile
+# CSS responsive per visualizzazione ottimale su dispositivi mobili (Pixel 8 Pro)
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] {
@@ -42,7 +42,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Ibrida
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale / Centro di Spinta Ponderato
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -72,28 +72,32 @@ with st.sidebar:
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
+# Calcolo forze basate sui comandi
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 F_sx_set = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_set = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
+# Verifica interferenza wash (selettiva)
 wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_set, pos_dx)
 wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_set, pos_sx)
 
 eff_sx = 0.8 if wash_dx_hits_sx else 1.0
 eff_dx = 0.8 if wash_sx_hits_dx else 1.0
 
+# Applicazione efficienza
 F_sx_eff = F_sx_set * eff_sx
 F_dx_eff = F_dx_set * eff_dx
 ton1_eff = ton1_set * eff_sx
 ton2_eff = ton2_set * eff_dx
 
+# Calcolo risultante e direzione nautica
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
-# CALCOLO MOMENTO CORRETTO (FISSATO ERRORE F_dx_eff)
+# Calcolo momento (tm) e rotazione (kNm) con forze effettive
 M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
         (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm * G_ACCEL
