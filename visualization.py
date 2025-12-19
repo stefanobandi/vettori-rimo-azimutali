@@ -5,28 +5,29 @@ from matplotlib.patches import PathPatch
 from matplotlib.path import Path
 
 def draw_wash(ax, pos, angle_deg, power_pct):
-    """Disegna la scia (wash) del propulsore."""
+    """Disegna la scia (wash) del propulsore con matematica vettoriale corretta."""
     if power_pct < 5: return
-    # La scia va nella direzione opposta alla spinta
+    
+    # La scia va nella direzione opposta alla spinta (+180°)
     angle_wash_rad = np.radians(angle_deg + 180)
-    length = (power_pct / 100) * 18.0 # Lunghezza massima 18 metri
-    width_start = 2.0
-    width_end = 6.0
+    length = (power_pct / 100) * 22.0 
+    w_start = 2.2
+    w_end = 7.5
     
-    # Vettore direzione scia
-    dx, dy = np.sin(angle_wash_rad), np.cos(angle_wash_rad)
-    # Vettore perpendicolare per la larghezza
-    px, py = -dy, dx
+    # Vettore direzione scia (unitario)
+    d_vec = np.array([np.sin(angle_wash_rad), np.cos(angle_wash_rad)])
+    # Vettore perpendicolare (unitario)
+    p_vec = np.array([-d_vec[1], d_vec[0]])
     
-    # Definizione dei 4 angoli del trapezio della scia
-    p1 = pos + (px * width_start / 2)
-    p2 = pos - (px * width_start / 2)
-    p3 = pos + (dx * length) - (px * width_end / 2)
-    p4 = pos + (dx * length) + (px * width_end / 2)
+    # Calcolo vertici del trapezio della scia
+    p1 = pos + p_vec * (w_start / 2)
+    p2 = pos - p_vec * (w_start / 2)
+    p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
+    p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
     
-    verts = [p1, p2, p3, p4, p1]
-    # Disegno poligonale semitrasparente
-    ax.add_patch(plt.Polygon(verts, facecolor='cyan', alpha=0.12, edgecolor='blue', lw=0.5, ls='--', zorder=0))
+    verts = [p1, p2, p3, p4]
+    # Usiamo un celeste acceso con alpha leggermente superiore e zorder sopra lo scafo base
+    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=1.2))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     """Disegna un'elica stilizzata (forma a 8) perpendicolare al vettore."""
