@@ -6,7 +6,7 @@ from matplotlib.path import Path
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     """Disegna un'elica stilizzata (forma a 8) perpendicolare al vettore."""
-    # L'elica deve essere perpendicolare alla spinta, quindi aggiungiamo 90 gradi
+    # L'elica deve essere perpendicolare alla spinta (+90 gradi)
     angle_rad = np.radians(angle_deg + 90)
     t = np.linspace(0, 2 * np.pi, 60)
     
@@ -21,12 +21,10 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False)
     y_rot = x_base * s + y_base * c
     
     if is_polar:
-        # Conversione in coordinate polari per il plot dell'orologio
         theta = np.arctan2(x_rot, y_rot)
         r = np.sqrt(x_rot**2 + y_rot**2)
-        ax.plot(theta, r, color=color, lw=2, zorder=5, alpha=0.8)
+        ax.plot(theta, r, color=color, lw=1.5, zorder=5, alpha=0.7)
     else:
-        # Coordinate Cartesiane per il grafico principale
         ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
@@ -35,15 +33,21 @@ def plot_clock(azimuth_deg, color):
     ax.set_theta_direction(-1)
     ax.set_yticks([]); ax.set_xticks(np.radians([0, 90, 180, 270]))
     
-    # 1. Disegna l'elica al centro dell'orologio (scalata piccola)
+    # 1. Disegna l'elica al centro (piccola)
     draw_propeller(ax, [0,0], azimuth_deg, color=color, scale=0.15, is_polar=True)
     
-    # 2. Disegna il triangolo invertito (base larga al centro, punta all'esterno)
+    # 2. Disegna l'indicatore ad ago (rastremato)
+    # Parte largo al centro (r=0) e si assottiglia verso l'esterno (r=0.95)
     rad = np.radians(azimuth_deg)
-    width = 0.35 # Larghezza della base in radianti
-    t_verts = [rad, rad + width, rad - width, rad]
-    r_verts = [0.9, 0, 0, 0.9]
-    ax.fill(t_verts, r_verts, color=color, alpha=0.6, zorder=4)
+    base_width = 0.15  # Larghezza angolare della base
+    
+    # Vertici del poligono: [Punta, Base Destra, Base Sinistra, Punta]
+    t_verts = [rad, rad + base_width, rad - base_width, rad]
+    r_verts = [0.95, 0, 0, 0.95]
+    
+    ax.fill(t_verts, r_verts, color=color, alpha=0.7, zorder=4, edgecolor=color, lw=0.5)
+    # Aggiunge una linea centrale per dare enfasi alla direzione
+    ax.plot([rad, rad], [0, 0.95], color=color, lw=2, zorder=5)
     
     ax.grid(True, alpha=0.3)
     fig.patch.set_alpha(0)
@@ -62,6 +66,6 @@ def draw_static_elements(ax, pos_sx, pos_dx):
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
-    # Cerchi base motori
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
+    # Cerchi guida motori (sbiaditi)
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
