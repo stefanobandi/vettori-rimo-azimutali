@@ -4,19 +4,40 @@ import numpy as np
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
 
+def draw_wash(ax, pos, angle_deg, power_pct):
+    """Disegna la scia (wash) del propulsore."""
+    if power_pct < 5: return
+    # La scia va nella direzione opposta alla spinta
+    angle_wash_rad = np.radians(angle_deg + 180)
+    length = (power_pct / 100) * 18.0 # Lunghezza massima 18 metri
+    width_start = 2.0
+    width_end = 6.0
+    
+    # Vettore direzione scia
+    dx, dy = np.sin(angle_wash_rad), np.cos(angle_wash_rad)
+    # Vettore perpendicolare per la larghezza
+    px, py = -dy, dx
+    
+    # Definizione dei 4 angoli del trapezio della scia
+    p1 = pos + (px * width_start / 2)
+    p2 = pos - (px * width_start / 2)
+    p3 = pos + (dx * length) - (px * width_end / 2)
+    p4 = pos + (dx * length) + (px * width_end / 2)
+    
+    verts = [p1, p2, p3, p4, p1]
+    # Disegno poligonale semitrasparente
+    ax.add_patch(plt.Polygon(verts, facecolor='cyan', alpha=0.12, edgecolor='blue', lw=0.5, ls='--', zorder=0))
+
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     """Disegna un'elica stilizzata (forma a 8) perpendicolare al vettore."""
     angle_rad = np.radians(angle_deg + 90)
     t = np.linspace(0, 2 * np.pi, 60)
-    
     a = 1.6 * scale
     x_base = (a * np.sin(t) * np.cos(t)) * 0.7
     y_base = a * np.sin(t)
-    
     c, s = np.cos(-angle_rad), np.sin(-angle_rad)
     x_rot = x_base * c - y_base * s
     y_rot = x_base * s + y_base * c
-    
     if is_polar:
         theta = np.arctan2(x_rot, y_rot)
         r = np.sqrt(x_rot**2 + y_rot**2)
@@ -29,20 +50,13 @@ def plot_clock(azimuth_deg, color):
     ax.set_theta_zero_location('N')
     ax.set_theta_direction(-1)
     ax.set_yticks([]); ax.set_xticks(np.radians([0, 90, 180, 270]))
-    
     draw_propeller(ax, [0,0], azimuth_deg, color=color, scale=0.15, is_polar=True)
-    
     rad = np.radians(azimuth_deg)
-    inner_r = 0.15
-    outer_r = 0.98
-    half_width = 0.4
-    
+    inner_r, outer_r, half_width = 0.15, 0.98, 0.4
     t_verts = [rad, rad + half_width, rad - half_width, rad]
     r_verts = [outer_r, inner_r, inner_r, outer_r]
-    
     ax.fill(t_verts, r_verts, color=color, alpha=0.9, zorder=4, edgecolor='black', lw=0.5)
     ax.plot([rad, rad], [inner_r, outer_r], color='white', lw=1.2, alpha=0.7, zorder=5)
-    
     ax.grid(True, alpha=0.3)
     fig.patch.set_alpha(0)
     return fig
