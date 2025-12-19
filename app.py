@@ -9,6 +9,25 @@ from visualization import *
 
 st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
 
+# CSS Injection per evitare il troncamento del testo nelle metriche su mobile
+st.markdown("""
+<style>
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        overflow-wrap: break-word;
+        white-space: normal;
+    }
+    @media (max-width: 640px) {
+        [data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.8rem !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 if "p1" not in st.session_state:
     st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.42})
 
@@ -22,8 +41,8 @@ def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.42
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
-    <p style='font-size: 18px; margin-bottom: 10px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Ibrida (Soglia 50m)
+    <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
+    <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Ibrida
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -53,35 +72,29 @@ with st.sidebar:
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
-# Calcolo forze teoriche (comandi)
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 F_sx_set = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_set = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-# Analisi interferenza Wash (chi colpisce chi?)
 wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_set, pos_dx)
 wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_set, pos_sx)
 
-# L'efficienza si riduce solo per il propulsore colpito
 eff_sx = 0.8 if wash_dx_hits_sx else 1.0
 eff_dx = 0.8 if wash_sx_hits_dx else 1.0
 
-# Calcolo spinte effettive finali
 F_sx_eff = F_sx_set * eff_sx
 F_dx_eff = F_dx_set * eff_dx
 ton1_eff = ton1_set * eff_sx
 ton2_eff = ton2_set * eff_dx
 
-# Risultanti e Direzione
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
-# Momento calcolato con forze effettive
 M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
-        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
+        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx[0])
 M_knm = M_tm * G_ACCEL
 
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -103,11 +116,9 @@ with col_r:
 
 with col_c:
     with st.expander("📍 Pivot Point", expanded=True):
-        st.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y")
-        st.slider("Trasversale (X)", -5.0, 5.0, key="pp_x")
+        st.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
-    
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
@@ -116,13 +127,11 @@ with col_c:
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g--', lw=1, alpha=0.3)
     else:
-        # Centro di spinta ponderato basato sulla spinta effettiva
         spinta_totale = (ton1_eff + ton2_eff)
         w_x = (ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / spinta_totale if spinta_totale > 0.1 else 0.0
         origin_res = np.array([w_x, POS_THRUSTERS_Y])
 
     sc = 0.4
-    # Gli arrow mostrano ora la spinta reale ridotta se necessario
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
     ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
@@ -135,11 +144,13 @@ with col_c:
     st.pyplot(fig)
     st.markdown("### 📊 Analisi Dinamica")
     
-    # Messaggi di avviso specifici per propulsore
-    if wash_sx_hits_dx: st.error("⚠️ INTERFERENZA: Propulsore DX in scia del SX. Spinta DX ridotta del 20%.")
-    if wash_dx_hits_sx: st.error("⚠️ INTERFERENZA: Propulsore SX in scia del DX. Spinta SX ridotta del 20%.")
+    if wash_sx_hits_dx: st.error("⚠️ DX in scia SX (-20%)")
+    if wash_dx_hits_sx: st.error("⚠️ SX in scia DX (-20%)")
     
     m1, m2, m3 = st.columns(3)
-    m1.metric("Tiro Totale", f"{res_ton:.1f} t")
-    m2.metric("Direzione", f"{direzione_nautica:.0f}°")
-    m3.metric("Rotazione", "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE", delta=f"{abs(M_tm):.1f} tm | {abs(M_knm):.0f} kNm", delta_color="off")
+    m1.metric("Tiro Tot.", f"{res_ton:.1f} t")
+    m2.metric("Dir.", f"{direzione_nautica:.0f}°")
+    
+    # Valore di rotazione abbreviato per sicurezza mobile
+    rot_val = "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE"
+    m3.metric("Rotazione", rot_val, delta=f"{abs(M_tm):.1f} tm", delta_color="off")
