@@ -52,18 +52,36 @@ with st.sidebar:
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
-ton1, ton2 = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE, (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
+
+# Calcolo forze teoriche (comandi)
+ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
+ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
-F_sx, F_dx = np.array([ton1*np.sin(rad1), ton1*np.cos(rad1)]), np.array([ton2*np.sin(rad2), ton2*np.cos(rad2)])
+F_sx_set = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
+F_dx_set = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-warning_int = check_wash_hit(pos_sx, -F_sx, pos_dx) or check_wash_hit(pos_dx, -F_dx, pos_sx)
-eff = 0.8 if warning_int else 1.0
-res_u, res_v = (F_sx[0]+F_dx[0])*eff, (F_sx[1]+F_dx[1])*eff
+# Analisi interferenza Wash (chi colpisce chi?)
+wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_set, pos_dx)
+wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_set, pos_sx)
+
+# L'efficienza si riduce solo per il propulsore colpito
+eff_sx = 0.8 if wash_dx_hits_sx else 1.0
+eff_dx = 0.8 if wash_sx_hits_dx else 1.0
+
+# Calcolo spinte effettive finali
+F_sx_eff = F_sx_set * eff_sx
+F_dx_eff = F_dx_set * eff_dx
+ton1_eff = ton1_set * eff_sx
+ton2_eff = ton2_set * eff_dx
+
+# Risultanti e Direzione
+res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
-
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
-M_tm = ((pos_sx-pp_pos)[0]*F_sx[1] - (pos_sx-pp_pos)[1]*F_sx[0] + (pos_dx-pp_pos)[0]*F_dx[1] - (pos_dx-pp_pos)[1]*F_dx[0]) * eff
+# Momento calcolato con forze effettive
+M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
+        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm * G_ACCEL
 
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -74,12 +92,12 @@ if inter is not None:
 col_l, col_c, col_r = st.columns([1, 2, 1])
 with col_l:
     st.slider("Potenza SX (%)", 0, 100, key="p1")
-    st.metric("Spinta SX", f"{ton1:.1f} t")
+    st.metric("Spinta SX", f"{ton1_eff:.1f} t")
     st.slider("Azimut SX (°)", 0, 360, key="a1")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
 with col_r:
     st.slider("Potenza DX (%)", 0, 100, key="p2")
-    st.metric("Spinta DX", f"{ton2:.1f} t")
+    st.metric("Spinta DX", f"{ton2_eff:.1f} t")
     st.slider("Azimut DX (°)", 0, 360, key="a2")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
@@ -98,12 +116,15 @@ with col_c:
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
         ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g--', lw=1, alpha=0.3)
     else:
-        w_x = (ton1 * pos_sx[0] + ton2 * pos_dx[0]) / (ton1 + ton2) if (ton1 + ton2) > 0.1 else 0.0
+        # Centro di spinta ponderato basato sulla spinta effettiva
+        spinta_totale = (ton1_eff + ton2_eff)
+        w_x = (ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / spinta_totale if spinta_totale > 0.1 else 0.0
         origin_res = np.array([w_x, POS_THRUSTERS_Y])
 
     sc = 0.4
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx[0]*sc, F_sx[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx[0]*sc, F_dx[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
+    # Gli arrow mostrano ora la spinta reale ridotta se necessario
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
     ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     if abs(M_tm) > 1:
@@ -113,7 +134,11 @@ with col_c:
     ax.set_xlim(-28, 28); ax.set_ylim(-45, 38); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     st.markdown("### 📊 Analisi Dinamica")
-    if warning_int: st.error("⚠️ THRUSTER INTERFERENCE: Spinta ridotta del 20%.")
+    
+    # Messaggi di avviso specifici per propulsore
+    if wash_sx_hits_dx: st.error("⚠️ INTERFERENZA: Propulsore DX in scia del SX. Spinta DX ridotta del 20%.")
+    if wash_dx_hits_sx: st.error("⚠️ INTERFERENZA: Propulsore SX in scia del DX. Spinta SX ridotta del 20%.")
+    
     m1, m2, m3 = st.columns(3)
     m1.metric("Tiro Totale", f"{res_ton:.1f} t")
     m2.metric("Direzione", f"{direzione_nautica:.0f}°")
