@@ -61,7 +61,6 @@ eff = 0.8 if warning_int else 1.0
 res_u, res_v = (F_sx[0]+F_dx[0])*eff, (F_sx[1]+F_dx[1])*eff
 res_ton = np.sqrt(res_u**2 + res_v**2)
 
-# Direzione Nautica (0° = Prua/Nord)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
 M_tm = ((pos_sx-pp_pos)[0]*F_sx[1] - (pos_sx-pp_pos)[1]*F_sx[0] + (pos_dx-pp_pos)[0]*F_dx[1] - (pos_dx-pp_pos)[1]*F_dx[0]) * eff
@@ -91,7 +90,6 @@ with col_c:
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # Disegno eliche stilizzate perpendicolari
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
