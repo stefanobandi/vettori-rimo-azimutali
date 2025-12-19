@@ -91,7 +91,7 @@ with col_c:
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # Disegno eliche stilizzate
+    # Disegno eliche stilizzate perpendicolari
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
