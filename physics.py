@@ -85,42 +85,55 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-def predict_trajectory(f_res_local, m_ton_m, total_time=20.0, steps=10):
-    """Calcola la posizione futura integrando forze e drag idrodinamico."""
-    dt = 0.5  # Step di integrazione in secondi
+def predict_trajectory(f_res_local, m_ton_m, pp_x, pp_y, total_time=30.0, steps=20):
+    """
+    Calcola la posizione futura integrando forze, momento e drag idrodinamico,
+    rispettando la rotazione attorno al Pivot Point (PP).
+    """
+    dt = 0.1  # Passo di integrazione fine
     n_total_steps = int(total_time / dt)
-    record_every = n_total_steps // steps
+    record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale (locale)
+    # Stato iniziale del centro (0,0) nel frame locale
     x, y, heading_deg = 0.0, 0.0, 0.0
     vx, vy, omega = 0.0, 0.0, 0.0
     
-    # Forze costanti in Newton (trasformate da tonnellate)
+    # Forze in Newton
     fx_const = f_res_local[0] * 1000 * 9.80665
     fy_const = f_res_local[1] * 1000 * 9.80665
     m_const = m_ton_m * 1000 * 9.80665
     
     results = []
     for i in range(1, n_total_steps + 1):
-        # Calcolo Drag (quadratico)
+        # 1. Calcolo Drag locale
         dfx = -K_X * vx * abs(vx)
         dfy = -K_Y * vy * abs(vy)
         dm = -K_W * omega * abs(omega)
         
-        # Accelerazioni (F = ma)
+        # 2. Accelerazioni
         ax = (fx_const + dfx) / MASS
         ay = (fy_const + dfy) / MASS
         alpha = (m_const + dm) / I_Z
         
-        # Update Velocità
+        # 3. Update Velocità
         vx += ax * dt
         vy += ay * dt
         omega += alpha * dt
         
-        # Update Posizione nel World Frame (semplificato)
+        # 4. CINEMATICA DEL PIVOT POINT:
+        # La velocità del centro (0,0) è data dalla velocità lineare + rotazione attorno a PP
+        # v_centro = v_lineare + omega x r (dove r è il vettore da PP a Centro)
+        # r = (0 - pp_x, 0 - pp_y)
+        v_induced_x = -omega * (0 - pp_y)
+        v_induced_y = omega * (0 - pp_x)
+        
+        vx_total = vx + v_induced_x
+        vy_total = vy + v_induced_y
+        
+        # 5. Trasformazione nel frame globale (World)
         rad_h = np.radians(heading_deg)
-        dx_world = vx * np.cos(rad_h) + vy * np.sin(rad_h)
-        dy_world = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
+        dx_world = vx_total * np.cos(rad_h) + vy_total * np.sin(rad_h)
+        dy_world = -vx_total * np.sin(rad_h) + vy_total * np.cos(rad_h)
         
         x += dx_world * dt
         y += dy_world * dt
