@@ -1,6 +1,57 @@
 import numpy as np
 import streamlit as st
-from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y
+from constants import *
+
+def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
+    """
+    Simula il moto del rimorchiatore considerando massa, inerzia e damping.
+    Ritorna una lista di (x, y, heading_deg)
+    """
+    # Stato iniziale
+    x, y, head_rad = 0.0, 0.0, 0.0
+    vx, vy, v_ang = 0.0, 0.0, 0.0
+    
+    trajectory = []
+    t = 0.0
+    dt = 0.1 # Passo di integrazione interno più fine per stabilità
+    
+    # Pre-calcolo componenti forza globale (assumendo heading iniziale 0)
+    # Nota: f_total_n è in coordinate locali [Sway, Surge]
+    
+    while t <= duration:
+        if abs(t % step) < 0.05:
+            trajectory.append((x, y, np.degrees(head_rad)))
+        
+        # 1. Calcolo forze di resistenza (Damping lineare semplice)
+        # Resistenza opposta al moto in coordinate locali
+        res_x = -vx * DAMPING_LINEAR_Y # Sway
+        res_y = -vy * DAMPING_LINEAR_X # Surge
+        res_m = -v_ang * DAMPING_ANGULAR
+        
+        # 2. Accelerazioni (F = m*a)
+        ax = (f_total_n[0] + res_x) / MASS
+        ay = (f_total_n[1] + res_y) / MASS
+        a_ang = (torque_nm + res_m) / IZ
+        
+        # 3. Aggiornamento velocità
+        vx += ax * dt
+        vy += ay * dt
+        v_ang += a_ang * dt
+        
+        # 4. Trasformazione velocità da locali a globali per l'integrazione posizione
+        # (Semplificato: ipotizziamo piccoli angoli o integrazione nel tempo)
+        c, s = np.cos(head_rad), np.sin(head_rad)
+        vx_global = vx * c + vy * s
+        vy_global = -vx * s + vy * c
+        
+        # 5. Aggiornamento posizione e angolo
+        x += vx_global * dt
+        y += vy_global * dt
+        head_rad += v_ang * dt
+        
+        t += dt
+        
+    return trajectory
 
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
