@@ -15,6 +15,10 @@ st.markdown("""
         overflow-wrap: break-word;
         white-space: normal;
     }
+    @media (max-width: 640px) {
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -29,6 +33,12 @@ def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.42
 
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
+st.markdown(f"""
+<div style='text-align: center;'>
+    <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione / Centro Ponderato
+</div>
+""", unsafe_allow_html=True)
 st.write("---")
 
 with st.sidebar:
@@ -68,7 +78,7 @@ with st.sidebar:
 
 # Calcoli Fisici
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
-pp_offset = np.array([st.session_state.pp_x, st.session_state.pp_y])
+pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
@@ -88,9 +98,8 @@ res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
-# Momento calcolato rispetto al Pivot Point
-M_tm = ((pos_sx-pp_offset)[0]*F_sx_eff[1] - (pos_sx-pp_offset)[1]*F_sx_eff[0] + 
-        (pos_dx-pp_offset)[0]*F_dx_eff[1] - (pos_dx-pp_offset)[1]*F_dx_eff[0])
+M_tm = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
+        (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm * G_ACCEL
 
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -98,7 +107,7 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-# Layout
+# Layout colonne
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 with col_l:
     st.slider("Pot. SX %", 0, 100, key="p1")
@@ -119,14 +128,16 @@ with col_c:
     
     fig, ax = plt.subplots(figsize=(10, 12))
     
+    # 1. Disegno Predizione (Sotto lo scafo attuale)
     if show_prediction:
-        # Passiamo i vettori e il momento rispetto al PP per una predizione accurata
-        traj = predict_trajectory(np.array([res_u, res_v]), M_tm, pp_offset)
+        traj = predict_trajectory(np.array([res_u, res_v]), M_tm)
         for idx, (tx, ty, th) in enumerate(traj):
-            alpha = (idx + 1) / (len(traj) + 5) * 0.4
+            alpha = (idx + 1) / (len(traj) + 5) * 0.4 # Dissolvenza nel tempo
             draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
 
+    # 2. Scafo statico
     draw_static_elements(ax, pos_sx, pos_dx)
+    
     if show_wash:
         draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
         draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
@@ -135,8 +146,31 @@ with col_c:
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
+    
+    # --- SCALA VETTORI RIPRISTINATA ---
     sc = 0.7
     
+    if not show_construction:
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
+    else:
+        if inter is not None:
+            v_sx_len = np.linalg.norm(F_sx_eff)*sc
+            v_dx_len = np.linalg.norm(F_dx_eff)*sc
+            hw_sx = min(0.3, v_sx_len * 0.4); hl_sx = min(0.4, v_sx_len * 0.5)
+            hw_dx = min(0.3, v_dx_len * 0.4); hl_dx = min(0.4, v_dx_len * 0.5)
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
+                     width=0.08, head_width=hw_sx, head_length=hl_sx, alpha=0.3, zorder=6, length_includes_head=True)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
+                     width=0.08, head_width=hw_dx, head_length=hl_dx, alpha=0.3, zorder=6, length_includes_head=True)
+            pSX_tip = inter + F_sx_eff*sc
+            pDX_tip = inter + F_dx_eff*sc
+            pRES_tip = inter + np.array([res_u, res_v])*sc
+            ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4)
+            ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
+
     v_sx_orig_len = np.linalg.norm(F_sx_eff)*sc
     v_dx_orig_len = np.linalg.norm(F_dx_eff)*sc
     hw_sx_o = min(0.5, v_sx_orig_len * 0.4); hl_sx_o = min(0.7, v_sx_orig_len * 0.5)
@@ -158,10 +192,13 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
+    # --- LIMITI GRAFICO PER ZOOM-IN ---
     ax.set_xlim(-30, 30); ax.set_ylim(-40, 35); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     
     st.markdown("### 📊 Analisi Dinamica")
+    if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
+    if wash_dx_hits_sx: st.error("⚠️ SX in scia del DX. Spinta SX ridotta -20% ⚠️")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Tiro Tot.", f"{res_ton:.1f} t")
     m2.metric("Dir.", f"{direzione_nautica:.0f}°")
