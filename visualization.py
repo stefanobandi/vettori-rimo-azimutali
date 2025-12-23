@@ -18,32 +18,35 @@ def draw_static_elements(ax, pos_sx, pos_dx):
     codes, verts = zip(*path_data)
     ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=5))
     
+    # Fender
     hw, bow_tip, shoulder = 5.85, 16.25, 8.0
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=6))
     
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
+    # Cerchi ingombro rotazione piedi (azimutali)
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=7))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=7))
 
 def draw_prediction_path(ax, trajectory):
-    """Disegna i fantasmi blu della traiettoria."""
+    """Disegna i fantasmi blu della traiettoria con rotazione corretta."""
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
     hull_base_path = Path(verts, codes)
     
     for i, (dx, dy, d_angle_deg) in enumerate(trajectory):
-        # Escludiamo la posizione 0 (sovrapposta all'attuale)
-        if i == 0: continue
+        if i == 0: continue # Salta la posizione attuale
         
-        # Sfumatura dell'alpha per i fantasmi più lontani
-        alpha_val = max(0.05, 0.3 - (i * 0.01))
+        # Sfumatura dell'alpha
+        alpha_val = max(0.04, 0.25 - (i * 0.01))
         
-        # Trasformazione: Rotazione e poi Traslazione
+        # Matplotlib rotate_deg è antiorario (standard math).
+        # La nostra fisica head_rad aumenta in senso orario (nautico).
+        # Quindi dobbiamo passare l'angolo col segno invertito.
         tr = mtransforms.Affine2D().rotate_deg(-d_angle_deg).translate(dx, dy) + ax.transData
         
         patch = PathPatch(hull_base_path, facecolor='none', edgecolor='blue', 
-                          lw=1.0, ls='-', alpha=alpha_val, zorder=1, transform=tr)
+                          lw=0.8, ls='-', alpha=alpha_val, zorder=1, transform=tr)
         ax.add_patch(patch)
 
 def draw_wash(ax, pos, angle_deg, power_pct):
@@ -59,7 +62,7 @@ def draw_wash(ax, pos, angle_deg, power_pct):
     p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
     p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
     verts = [p1, p2, p3, p4]
-    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=1.2))
+    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=2))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     angle_rad = np.radians(angle_deg + 90)
