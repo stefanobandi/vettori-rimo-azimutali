@@ -110,21 +110,21 @@ if inter is not None:
 # Layout colonne
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 with col_l:
-    st.slider("Pot. SX %", 0, 100, key="p1")
+    st.slider("Potenza SX", 0, 100, key="p1")
     st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    st.slider("Azi. SX °", 0, 360, key="a1")
+    st.slider("Azimuth SX", 0, 360, key="a1")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
 with col_r:
-    st.slider("Pot. DX %", 0, 100, key="p2")
+    st.slider("Potenza DX", 0, 100, key="p2")
     st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    st.slider("Azi. DX °", 0, 360, key="a2")
+    st.slider("Azimuth DX", 0, 360, key="a2")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
     with st.expander("📍 Pivot Point", expanded=True):
         pcol1, pcol2 = st.columns(2)
-        pcol1.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
-        pcol2.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
+        pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y")
+        pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x")
     
     fig, ax = plt.subplots(figsize=(10, 12))
     
@@ -191,9 +191,12 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    # --- ZOOM RIPRISTINATO ---
     ax.set_xlim(-30, 30); ax.set_ylim(-40, 35); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
+    
+    # Nota predizione dinamica
+    if show_prediction:
+        st.markdown("<p style='color: #0000FF; font-weight: bold;'>Predizione di movimento: 30 secondi (20 sagome intervallate di 1,5 secondi).</p>", unsafe_allow_html=True)
     
     st.markdown("### 📊 Analisi Dinamica")
     if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
