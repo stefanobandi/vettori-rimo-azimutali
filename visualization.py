@@ -1,35 +1,24 @@
-# visualization.py
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
 
 def draw_wash(ax, pos, angle_deg, power_pct):
-    """Disegna la scia (wash) del propulsore con matematica vettoriale."""
     if power_pct < 5: return
-    
-    # La scia va nella direzione opposta alla spinta (+180°)
     angle_wash_rad = np.radians(angle_deg + 180)
     length = (power_pct / 100) * 22.0 
     w_start = 2.2
     w_end = 7.5
-    
-    # Vettore direzione scia
     d_vec = np.array([np.sin(angle_wash_rad), np.cos(angle_wash_rad)])
-    # Vettore perpendicolare
     p_vec = np.array([-d_vec[1], d_vec[0]])
-    
-    # Vertici del trapezio
     p1 = pos + p_vec * (w_start / 2)
     p2 = pos - p_vec * (w_start / 2)
     p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
     p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
-    
     verts = [p1, p2, p3, p4]
     ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=1.2))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
-    """Disegna un'elica stilizzata (forma a 8) perpendicolare al vettore."""
     angle_rad = np.radians(angle_deg + 90)
     t = np.linspace(0, 2 * np.pi, 60)
     a = 1.6 * scale
