@@ -1,4 +1,3 @@
-# physics.py
 import numpy as np
 import streamlit as st
 from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y
@@ -55,6 +54,20 @@ def apply_fast_side_step(direction):
                 st.toast(f"Fast Sinistra: Slave {int(round(p_slave))}%", icon="⚡")
     except Exception as e:
         st.error(f"Errore geometrico: {e}")
+
+def apply_turn_on_the_spot(direction):
+    """
+    Logica 'Real Feel' per rotazione sul posto.
+    Dritta: DX 045°, SX 135° (Power 50% = 17.5t)
+    Sinistra: Speculare (SX 315°, DX 225°)
+    """
+    potenza = 50 # 50% di 35t = 17.5t
+    if direction == "DRITTA":
+        st.session_state.p1, st.session_state.a1 = potenza, 135
+        st.session_state.p2, st.session_state.a2 = potenza, 45
+    else:
+        st.session_state.p1, st.session_state.a1 = potenza, 315
+        st.session_state.p2, st.session_state.a2 = potenza, 225
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
