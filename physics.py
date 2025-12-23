@@ -5,25 +5,26 @@ from constants import *
 def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
     """
     Simula il moto del rimorchiatore considerando massa, inerzia e damping.
-    Ritorna una lista di (x, y, heading_deg)
+    Ritorna una lista di (x, y, heading_deg) campionata esattamente ogni 'step' secondi.
     """
-    # Stato iniziale
+    # Stato iniziale (locali = globali all'inizio)
     x, y, head_rad = 0.0, 0.0, 0.0
     vx, vy, v_ang = 0.0, 0.0, 0.0
     
     trajectory = []
     t = 0.0
-    dt = 0.1 # Passo di integrazione interno più fine per stabilità
+    dt = 0.05 # Passo di integrazione molto fine per precisione
     
-    # Pre-calcolo componenti forza globale (assumendo heading iniziale 0)
-    # Nota: f_total_n è in coordinate locali [Sway, Surge]
+    # Calcoliamo quanti step di campionamento dobbiamo salvare
+    next_sample_time = 0.0
     
-    while t <= duration:
-        if abs(t % step) < 0.05:
+    while t <= duration + dt:
+        # Salvataggio campione
+        if t >= next_sample_time:
             trajectory.append((x, y, np.degrees(head_rad)))
+            next_sample_time += step
         
-        # 1. Calcolo forze di resistenza (Damping lineare semplice)
-        # Resistenza opposta al moto in coordinate locali
+        # 1. Calcolo resistenze (Damping)
         res_x = -vx * DAMPING_LINEAR_Y # Sway
         res_y = -vy * DAMPING_LINEAR_X # Surge
         res_m = -v_ang * DAMPING_ANGULAR
@@ -38,9 +39,10 @@ def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
         vy += ay * dt
         v_ang += a_ang * dt
         
-        # 4. Trasformazione velocità da locali a globali per l'integrazione posizione
-        # (Semplificato: ipotizziamo piccoli angoli o integrazione nel tempo)
+        # 4. Rotazione delle velocità da locali a globali
+        # Nota: usiamo l'angolo attuale per proiettare lo spostamento
         c, s = np.cos(head_rad), np.sin(head_rad)
+        # In un sistema dove Y è avanti e X è destra:
         vx_global = vx * c + vy * s
         vy_global = -vx * s + vy * c
         
