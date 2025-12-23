@@ -140,28 +140,45 @@ with col_c:
         ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
     else:
         if inter is not None:
-            # Vettori Trasportati (Schiarendo molto per far risaltare il parallelogramma)
-            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, alpha=0.3, zorder=6, length_includes_head=True)
-            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, alpha=0.3, zorder=6, length_includes_head=True)
+            v_sx_len = np.linalg.norm(F_sx_eff)*sc
+            v_dx_len = np.linalg.norm(F_dx_eff)*sc
             
-            # Calcolo punte esatte
+            # Parametri punta scalati per i trasportati
+            hw_sx = min(0.3, v_sx_len * 0.4); hl_sx = min(0.4, v_sx_len * 0.5)
+            hw_dx = min(0.3, v_dx_len * 0.4); hl_dx = min(0.4, v_dx_len * 0.5)
+
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
+                     width=0.08, head_width=hw_sx, head_length=hl_sx, alpha=0.3, zorder=6, length_includes_head=True)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
+                     width=0.08, head_width=hw_dx, head_length=hl_dx, alpha=0.3, zorder=6, length_includes_head=True)
+            
             pSX_tip = inter + F_sx_eff*sc
             pDX_tip = inter + F_dx_eff*sc
             pRES_tip = inter + np.array([res_u, res_v])*sc
             
-            # Chiusura Parallelogramma sulle punte
             ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
-            ax.plot([pDX_tip[0], pRES_tip_0 := pRES_tip[0]], [pDX_tip[1], pRES_tip_1 := pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             
             ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4)
             ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
 
-    # Vettori Originali
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.7, length_includes_head=True)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.7, length_includes_head=True)
+    # Vettori Originali con punte scalate
+    v_sx_orig_len = np.linalg.norm(F_sx_eff)*sc
+    v_dx_orig_len = np.linalg.norm(F_dx_eff)*sc
+    hw_sx_o = min(0.5, v_sx_orig_len * 0.4); hl_sx_o = min(0.7, v_sx_orig_len * 0.5)
+    hw_dx_o = min(0.5, v_dx_orig_len * 0.4); hl_dx_o = min(0.7, v_dx_orig_len * 0.5)
 
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
+             width=0.15, head_width=hw_sx_o, head_length=hl_sx_o, zorder=4, alpha=0.7, length_includes_head=True)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
+             width=0.15, head_width=hw_dx_o, head_length=hl_dx_o, zorder=4, alpha=0.7, length_includes_head=True)
+
+    # Vettore Risultante Blu con punta scalata
     if res_ton > 0.1:
-        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=8, length_includes_head=True)
+        v_res_len = res_ton * sc
+        hw_res = min(0.8, v_res_len * 0.4); hl_res = min(1.2, v_res_len * 0.5)
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', 
+                 width=0.3, head_width=hw_res, head_length=hl_res, alpha=0.7, zorder=8, length_includes_head=True)
     
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     
