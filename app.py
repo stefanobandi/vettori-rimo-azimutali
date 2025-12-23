@@ -146,7 +146,9 @@ with col_c:
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
-    sc = 0.4
+    
+    # --- SCALA VETTORI AGGIORNATA ---
+    sc = 0.7 
     
     if not show_construction:
         ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
@@ -190,7 +192,8 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    ax.set_xlim(-40, 40); ax.set_ylim(-60, 50); ax.set_aspect('equal'); ax.axis('off')
+    # --- LIMITI GRAFICO ADEGUATI PER LA NUOVA SCALA ---
+    ax.set_xlim(-45, 45); ax.set_ylim(-75, 55); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     
     st.markdown("### 📊 Analisi Dinamica")
