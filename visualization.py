@@ -14,7 +14,6 @@ def get_hull_path():
     ]
 
 def draw_static_hull(ax):
-    """Disegna solo la carena del rimorchiatore."""
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
     ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=2))
@@ -26,12 +25,10 @@ def draw_static_hull(ax):
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2.5))
 
 def draw_azimuth_circles(ax, pos_sx, pos_dx):
-    """Disegna i cerchi di rotazione dei piedi azimutali."""
     ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.4, zorder=4))
     ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.4, zorder=4))
 
 def draw_prediction_path(ax, trajectory):
-    """Disegna i fantasmi blu con rotazione corretta (Antioraria = Positiva)."""
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
     hull_base_path = Path(verts, codes)
@@ -39,7 +36,7 @@ def draw_prediction_path(ax, trajectory):
     for i, (dx, dy, d_angle_deg) in enumerate(trajectory):
         if i == 0: continue
         alpha_val = max(0.04, 0.20 - (i * 0.008))
-        # rotate_deg in matplotlib è antiorario. La nostra fisica ora è allineata.
+        # Rotazione corretta (positiva = antioraria)
         tr = mtransforms.Affine2D().rotate_deg(d_angle_deg).translate(dx, dy) + ax.transData
         patch = PathPatch(hull_base_path, facecolor='none', edgecolor='blue', lw=0.8, alpha=alpha_val, zorder=1, transform=tr)
         ax.add_patch(patch)
@@ -65,7 +62,7 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False)
     if is_polar:
         ax.plot(np.arctan2(x_rot, y_rot), np.sqrt(x_rot**2 + y_rot**2), color=color, lw=1.5, zorder=3, alpha=0.5)
     else:
-        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=8, alpha=0.8)
+        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=10, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
     fig, ax = plt.subplots(figsize=(2.2, 2.2), subplot_kw={'projection': 'polar'})
