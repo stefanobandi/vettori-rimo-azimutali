@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,7 +8,6 @@ from visualization import *
 
 st.set_page_config(page_title="ASD Centurion V5.25", layout="wide")
 
-# CSS responsive per visualizzazione mobile
 st.markdown("""
 <style>
     [data-testid="stMetricValue"] {
@@ -38,7 +36,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione Vettoriale / Centro di Spinta Ponderato
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Logica:</b> Intersezione / Centro Ponderato
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -50,7 +48,6 @@ with st.sidebar:
     c2.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
     
     st.markdown("---")
-    # Toggle per la scia
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
     
     st.markdown("---")
@@ -61,6 +58,7 @@ with st.sidebar:
     ca1, ca2 = st.columns(2)
     ca1.button("Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
     ca2.button("Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
+    
     st.markdown("---")
     st.markdown("### ↔️ Side Step")
     r1, r2 = st.columns(2)
@@ -70,7 +68,14 @@ with st.sidebar:
     r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
     r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
 
-pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
+    st.markdown("---")
+    st.markdown("### 🔄 Turning on the Spot")
+    ts1, ts2 = st.columns(2)
+    ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
+    ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
+
+# Calcoli Fisici
+pos_sx, pos_dx = np.array([-POS_THRUST_X if 'POS_THRUST_X' in locals() else -POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
@@ -99,6 +104,7 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
+# UI Layout
 col_l, col_c, col_r = st.columns([1, 2, 1])
 with col_l:
     st.slider("Potenza SX (%)", 0, 100, key="p1")
@@ -117,15 +123,11 @@ with col_c:
         st.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
     fig, ax = plt.subplots(figsize=(8, 10))
     draw_static_elements(ax, pos_sx, pos_dx)
-    
-    # Visualizzazione Scia condizionata al toggle
     if show_wash:
         draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
         draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
-    
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
-    
     if not use_weighted:
         origin_res = inter
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
@@ -134,7 +136,6 @@ with col_c:
         spinta_totale = (ton1_eff + ton2_eff)
         w_x = (ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / spinta_totale if spinta_totale > 0.1 else 0.0
         origin_res = np.array([w_x, POS_THRUSTERS_Y])
-
     sc = 0.4
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
@@ -143,16 +144,15 @@ with col_c:
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
-
     ax.set_xlim(-28, 28); ax.set_ylim(-45, 38); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
-    st.markdown("### 📊 Analisi Dinamica")
     
+    st.markdown("### 📊 Analisi Dinamica")
     if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
     if wash_dx_hits_sx: st.error("⚠️ SX in scia del DX. Spinta SX ridotta -20% ⚠️")
-    
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Tiro Tot.", f"{res_ton:.1f} t")
     m2.metric("Dir.", f"{direzione_nautica:.0f}°")
     rot_val = "SINISTRA" if M_tm > 2 else "DRITTA" if M_tm < -2 else "STABILE"
-    m3.metric("Rotazione", rot_val, delta=f"{abs(M_tm):.1f} tm", delta_color="off")
+    m3.metric("Rotazione", rot_val)
+    m4.metric("Momento", f"{abs(M_tm):.0f} tm", f"{abs(M_knm):.0f} kNm", delta_color="off")
