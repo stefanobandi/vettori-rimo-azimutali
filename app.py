@@ -22,14 +22,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inizializzazione Session State
 if "p1" not in st.session_state:
-    st.session_state.update({
-        "p1": 50, "a1": 0, "p2": 50, "a2": 0, 
-        "pp_x": 0.0, "pp_y": 5.42,
-        "ghost": None,
-        "show_ghost": True
-    })
+    st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.42})
 
 def set_engine_state(p1, a1, p2, a2):
     st.session_state.p1, st.session_state.a1 = p1, a1
@@ -37,12 +31,6 @@ def set_engine_state(p1, a1, p2, a2):
 
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.42
-
-def capture_ghost(data):
-    st.session_state.ghost = data
-
-def clear_ghost():
-    st.session_state.ghost = None
 
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
@@ -53,7 +41,42 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 st.write("---")
 
-# Calcoli Fisici Preliminari (necessari per il salvataggio del fantasma)
+with st.sidebar:
+    st.header("Comandi Globali")
+    c1, c2 = st.columns(2)
+    c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
+    c2.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
+    
+    st.markdown("---")
+    show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
+    show_construction = st.checkbox("Costruzione Vettoriale", value=False)
+    show_prediction = st.checkbox("Predizione Movimento", value=True)
+    
+    st.markdown("---")
+    st.markdown("### ↕️ Longitudinali")
+    cf1, cf2 = st.columns(2)
+    cf1.button("⬆️ Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
+    cf2.button("🔼 Mezza AVANTI", on_click=set_engine_state, args=(50,0,50,0), use_container_width=True)
+    ca1, ca2 = st.columns(2)
+    ca1.button("⬇️ Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
+    ca2.button("🔽 Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### ↔️ Side Step")
+    r1, r2 = st.columns(2)
+    r1.button("⬅️ Fast SX", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
+    r2.button("➡️ Fast DX", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
+    r3, r4 = st.columns(2)
+    r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
+    r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 🔄 Turning on the Spot")
+    ts1, ts2 = st.columns(2)
+    ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
+    ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
+
+# Calcoli Fisici
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 
@@ -84,58 +107,6 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
-
-# Prepara dati per un eventuale salvataggio fantasma
-current_state_data = {
-    "p1": st.session_state.p1, "a1": st.session_state.a1,
-    "p2": st.session_state.p2, "a2": st.session_state.a2,
-    "F_sx": F_sx_eff, "F_dx": F_dx_eff,
-    "res_v": np.array([res_u, res_v]), "res_ton": res_ton,
-    "origin_res": origin_res
-}
-
-with st.sidebar:
-    st.header("Comandi Globali")
-    c1, c2 = st.columns(2)
-    c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    c2.button("Reset Pivot Point", on_click=reset_pivot, use_container_width=True)
-    
-    st.markdown("---")
-    st.subheader("👻 Funzione Fantasmi")
-    gf1, gf2 = st.columns(2)
-    gf1.button("Cattura", on_click=capture_ghost, args=(current_state_data,), use_container_width=True, help="Salva la posizione attuale come fantasma")
-    gf2.button("Rimuovi", on_click=clear_ghost, use_container_width=True, help="Cancella il fantasma salvato")
-    st.session_state.show_ghost = st.checkbox("Mostra Fantasma", value=st.session_state.show_ghost)
-    
-    st.markdown("---")
-    show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    show_construction = st.checkbox("Costruzione Vettoriale", value=False)
-    
-    st.markdown("---")
-    st.markdown("### ↕️ Longitudinali")
-    cf1, cf2 = st.columns(2)
-    cf1.button("⬆️ Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
-    cf2.button("🔼 Mezza AVANTI", on_click=set_engine_state, args=(50,0,50,0), use_container_width=True)
-    ca1, ca2 = st.columns(2)
-    ca1.button("⬇️ Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
-    ca2.button("🔽 Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
-    
-    st.markdown("---")
-    st.markdown("### ↔️ Side Step")
-    r1, r2 = st.columns(2)
-    r1.button("⬅️ Fast SX", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
-    r2.button("➡️ Fast DX", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
-    r3, r4 = st.columns(2)
-    r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
-    r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
-
-    st.markdown("---")
-    st.markdown("### 🔄 Turning on the Spot")
-    ts1, ts2 = st.columns(2)
-    ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
-    ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
-
 # Layout colonne
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 with col_l:
@@ -156,11 +127,15 @@ with col_c:
         pcol2.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
     
     fig, ax = plt.subplots(figsize=(10, 12))
-    draw_static_elements(ax, pos_sx, pos_dx)
     
-    # Rendering Fantasma (sotto gli elementi principali)
-    if st.session_state.ghost and st.session_state.show_ghost:
-        draw_ghost_state(ax, st.session_state.ghost, pos_sx, pos_dx, show_wash)
+    # Se attiva, disegna la predizione SOTTO il rimorchiatore statico
+    if show_prediction:
+        # Coefficienti di scala per la visualizzazione (non fisici puri, ma indicativi)
+        k_trasl = 0.15
+        k_rot = 0.08
+        draw_prediction(ax, res_u * k_trasl, res_v * k_trasl, M_tm * k_rot)
+    
+    draw_static_elements(ax, pos_sx, pos_dx)
     
     if show_wash:
         draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
@@ -169,6 +144,7 @@ with col_c:
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
+    origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     sc = 0.4
     
     if not show_construction:
