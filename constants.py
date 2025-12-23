@@ -5,7 +5,6 @@ BOLLARD_PULL_PER_ENGINE = 35.0 # Tonnellate
 
 # Dati Dinamici per Predizione
 MASS = 700000.0  # 700 tonnellate in kg
-# Momento d'inerzia stimato per un corpo di 32.5m x 11.7m
 IZ = 0.08 * MASS * (32.5**2 + 11.7**2) 
 
 # Coefficienti di smorzamento (Damping)
