@@ -49,7 +49,7 @@ with st.sidebar:
     
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (20s)", value=True)
+    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     
     st.markdown("---")
@@ -128,11 +128,11 @@ with col_c:
     
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # 1. Disegno Predizione (Sotto lo scafo attuale)
+    # 1. Disegno Predizione (ora include PP_X e PP_Y per la cinematica corretta)
     if show_prediction:
-        traj = predict_trajectory(np.array([res_u, res_v]), M_tm)
+        traj = predict_trajectory(np.array([res_u, res_v]), M_tm, st.session_state.pp_x, st.session_state.pp_y)
         for idx, (tx, ty, th) in enumerate(traj):
-            alpha = (idx + 1) / (len(traj) + 5) * 0.4 # Dissolvenza nel tempo
+            alpha = (idx + 1) / (len(traj) + 5) * 0.4
             draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
 
     # 2. Scafo statico
@@ -147,7 +147,6 @@ with col_c:
     
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     
-    # --- SCALA VETTORI RIPRISTINATA ---
     sc = 0.7
     
     if not show_construction:
@@ -186,14 +185,13 @@ with col_c:
         ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', 
                  width=0.3, head_width=hw_res, head_length=hl_res, alpha=0.7, zorder=8, length_includes_head=True)
     
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15)
     
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    # --- LIMITI GRAFICO PER ZOOM-IN ---
-    ax.set_xlim(-30, 30); ax.set_ylim(-40, 35); ax.set_aspect('equal'); ax.axis('off')
+    ax.set_xlim(-50, 50); ax.set_ylim(-60, 60); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     
     st.markdown("### 📊 Analisi Dinamica")
