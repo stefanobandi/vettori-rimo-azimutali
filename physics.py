@@ -3,7 +3,10 @@ import streamlit as st
 from constants import *
 
 def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
-    """Simula il moto del rimorchiatore considerando massa, inerzia e damping."""
+    """
+    Simula il moto del rimorchiatore considerando massa, inerzia e damping.
+    Ritorna una lista di (x, y, heading_deg).
+    """
     x, y, head_rad = 0.0, 0.0, 0.0
     vx, vy, v_ang = 0.0, 0.0, 0.0
     
@@ -17,7 +20,7 @@ def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
             trajectory.append((x, y, np.degrees(head_rad)))
             next_sample_time += step
         
-        # Resistenze
+        # Resistenze (Damping)
         res_x = -vx * DAMPING_LINEAR_Y
         res_y = -vy * DAMPING_LINEAR_X
         res_m = -v_ang * DAMPING_ANGULAR
@@ -32,7 +35,7 @@ def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
         vy += ay * dt
         v_ang += a_ang * dt
         
-        # Trasformazione in coordinate globali (Heading 0 = Nord/Y+)
+        # Trasformazione in coordinate globali
         c, s = np.cos(head_rad), np.sin(head_rad)
         vx_global = vx * c + vy * s
         vy_global = -vx * s + vy * c
@@ -55,8 +58,9 @@ def apply_slow_side_step(direction):
             a1_set, a2_set = alpha_deg, 180 - alpha_deg
         else:
             a1_set, a2_set = 180 + alpha_deg, 360 - alpha_deg
-        st.session_state.p1, st.session_state.p2 = 50, 50
+        st.session_state.p1 = 50
         st.session_state.a1 = int(round(a1_set % 360))
+        st.session_state.p2 = 50
         st.session_state.a2 = int(round(a2_set % 360))
     except Exception as e:
         st.error(f"Errore calcolo Slow: {e}")
@@ -95,12 +99,13 @@ def apply_fast_side_step(direction):
         st.error(f"Errore geometrico: {e}")
 
 def apply_turn_on_the_spot(direction):
+    potenza = 50
     if direction == "SINISTRA":
-        st.session_state.p1, st.session_state.a1 = 50, 135
-        st.session_state.p2, st.session_state.a2 = 50, 45
+        st.session_state.p1, st.session_state.a1 = potenza, 135
+        st.session_state.p2, st.session_state.a2 = potenza, 45
     else:
-        st.session_state.p1, st.session_state.a1 = 50, 315
-        st.session_state.p2, st.session_state.a2 = 50, 225
+        st.session_state.p1, st.session_state.a1 = potenza, 315
+        st.session_state.p2, st.session_state.a2 = potenza, 225
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
