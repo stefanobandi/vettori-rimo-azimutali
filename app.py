@@ -50,7 +50,7 @@ with st.sidebar:
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
-    show_prediction = st.checkbox("Predizione Movimento", value=True)
+    show_prediction = st.checkbox("Predizione 30s (Inerzia)", value=True)
     
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -128,12 +128,12 @@ with col_c:
     
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # Se attiva, disegna la predizione SOTTO il rimorchiatore statico
+    # Calcolo Traiettoria Predittiva
     if show_prediction:
-        # Coefficienti di scala per la visualizzazione (non fisici puri, ma indicativi)
-        k_trasl = 0.15
-        k_rot = 0.08
-        draw_prediction(ax, res_u * k_trasl, res_v * k_trasl, M_tm * k_rot)
+        f_n = np.array([res_u, res_v]) * 9806.65 # Newton
+        torque_nm = M_tm * 9806.65 # Newton Metro
+        traj = compute_trajectory(f_n, torque_nm)
+        draw_prediction_path(ax, traj)
     
     draw_static_elements(ax, pos_sx, pos_dx)
     
@@ -173,9 +173,9 @@ with col_c:
     hw_sx_o = min(0.5, v_sx_orig_len * 0.4); hl_sx_o = min(0.7, v_sx_orig_len * 0.5)
     hw_dx_o = min(0.5, v_dx_orig_len * 0.4); hl_dx_o = min(0.7, v_dx_orig_len * 0.5)
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
-             width=0.15, head_width=hw_sx_o, head_length=hl_sx_o, zorder=4, alpha=0.7, length_includes_head=True)
+             width=0.15, head_width=hw_sx_o, head_length=hl_sx_o, zorder=7, alpha=0.7, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
-             width=0.15, head_width=hw_dx_o, head_length=hl_dx_o, zorder=4, alpha=0.7, length_includes_head=True)
+             width=0.15, head_width=hw_dx_o, head_length=hl_dx_o, zorder=7, alpha=0.7, length_includes_head=True)
 
     if res_ton > 0.1:
         v_res_len = res_ton * sc
@@ -189,8 +189,10 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    ax.set_xlim(-28, 28); ax.set_ylim(-45, 38); ax.set_aspect('equal'); ax.axis('off')
+    ax.set_xlim(-45, 45); ax.set_ylim(-55, 55); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
+    
+    st.markdown("<p style='text-align: center; color: gray; font-size: 14px;'>I fantasmi blu rappresentano la posizione del rimorchiatore ogni 1,5 secondi per un totale di 30 secondi, considerando massa e inerzia.</p>", unsafe_allow_html=True)
     
     st.markdown("### 📊 Analisi Dinamica")
     if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
