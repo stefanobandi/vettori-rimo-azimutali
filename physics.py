@@ -87,14 +87,14 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
 
 def predict_trajectory(f_res_local, m_ton_m, pp_x, pp_y, total_time=30.0, steps=20):
     """
-    Calcola la posizione futura integrando forze, momento e drag idrodinamico,
-    rispettando la rotazione attorno al Pivot Point (PP).
+    Calcola la posizione futura integrando forze e drag idrodinamico,
+    rispettando rigorosamente la rotazione attorno al Pivot Point (PP).
     """
-    dt = 0.1  # Passo di integrazione fine
+    dt = 0.1
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale del centro (0,0) nel frame locale
+    # Stato iniziale del centro (0,0) nel frame globale all'istante t=0
     x, y, heading_deg = 0.0, 0.0, 0.0
     vx, vy, omega = 0.0, 0.0, 0.0
     
@@ -105,38 +105,37 @@ def predict_trajectory(f_res_local, m_ton_m, pp_x, pp_y, total_time=30.0, steps=
     
     results = []
     for i in range(1, n_total_steps + 1):
-        # 1. Calcolo Drag locale
+        # 1. Calcolo Drag locale (smorzamento)
         dfx = -K_X * vx * abs(vx)
         dfy = -K_Y * vy * abs(vy)
         dm = -K_W * omega * abs(omega)
         
-        # 2. Accelerazioni
+        # 2. Accelerazioni (Newton -> Moto)
         ax = (fx_const + dfx) / MASS
         ay = (fy_const + dfy) / MASS
         alpha = (m_const + dm) / I_Z
         
-        # 3. Update Velocità
+        # 3. Update Velocità angolare e lineare
         vx += ax * dt
         vy += ay * dt
         omega += alpha * dt
         
-        # 4. CINEMATICA DEL PIVOT POINT:
-        # La velocità del centro (0,0) è data dalla velocità lineare + rotazione attorno a PP
-        # v_centro = v_lineare + omega x r (dove r è il vettore da PP a Centro)
-        # r = (0 - pp_x, 0 - pp_y)
-        v_induced_x = -omega * (0 - pp_y)
-        v_induced_y = omega * (0 - pp_x)
+        # 4. Velocità effettiva del centro (0,0) indotta dalla rotazione attorno al PP
+        # Se ruota attorno al PP, la velocità del centro è la somma del moto lineare 
+        # e della rotazione del braccio (Centro - PP)
+        v_rot_x = -omega * (0 - pp_y)
+        v_rot_y = omega * (0 - pp_x)
         
-        vx_total = vx + v_induced_x
-        vy_total = vy + v_induced_y
+        vx_final = vx + v_rot_x
+        vy_final = vy + v_rot_y
         
-        # 5. Trasformazione nel frame globale (World)
+        # 5. Proiezione nel sistema globale (World Frame)
         rad_h = np.radians(heading_deg)
-        dx_world = vx_total * np.cos(rad_h) + vy_total * np.sin(rad_h)
-        dy_world = -vx_total * np.sin(rad_h) + vy_total * np.cos(rad_h)
+        dx_w = vx_final * np.cos(rad_h) + vy_final * np.sin(rad_h)
+        dy_w = -vx_final * np.sin(rad_h) + vy_final * np.cos(rad_h)
         
-        x += dx_world * dt
-        y += dy_world * dt
+        x += dx_w * dt
+        y += dy_w * dt
         heading_deg -= np.degrees(omega * dt)
         
         if i % record_every == 0:
