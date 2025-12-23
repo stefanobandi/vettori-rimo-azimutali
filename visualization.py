@@ -5,7 +5,6 @@ from matplotlib.path import Path
 import matplotlib.transforms as mtransforms
 
 def get_hull_path():
-    """Ritorna i dati del percorso della carena."""
     hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
     return [
         (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
@@ -17,29 +16,35 @@ def get_hull_path():
 def draw_static_elements(ax, pos_sx, pos_dx):
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
-    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
+    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=5))
     
-    # Fender
     hw, bow_tip, shoulder = 5.85, 16.25, 8.0
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
-    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
+    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=6))
     
     ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
     ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
 
-def draw_prediction(ax, dx, dy, d_angle_deg):
-    """Disegna la sagoma predetta traslata e ruotata."""
+def draw_prediction_path(ax, trajectory):
+    """Disegna i fantasmi blu della traiettoria."""
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
-    hull_path = Path(verts, codes)
+    hull_base_path = Path(verts, codes)
     
-    # Creazione trasformazione: Rotazione (attorno all'origine 0,0 che è il CG approssimativo) e poi Traslazione
-    # Nota: la rotazione avviene in gradi, segno meno per coordinata nautica
-    tr = mtransforms.Affine2D().rotate_deg(-d_angle_deg).translate(dx, dy) + ax.transData
-    
-    patch = PathPatch(hull_path, facecolor='none', edgecolor='cyan', lw=1.5, ls='--', alpha=0.6, zorder=0, transform=tr)
-    ax.add_patch(patch)
+    for i, (dx, dy, d_angle_deg) in enumerate(trajectory):
+        # Escludiamo la posizione 0 (sovrapposta all'attuale)
+        if i == 0: continue
+        
+        # Sfumatura dell'alpha per i fantasmi più lontani
+        alpha_val = max(0.05, 0.3 - (i * 0.01))
+        
+        # Trasformazione: Rotazione e poi Traslazione
+        tr = mtransforms.Affine2D().rotate_deg(-d_angle_deg).translate(dx, dy) + ax.transData
+        
+        patch = PathPatch(hull_base_path, facecolor='none', edgecolor='blue', 
+                          lw=1.0, ls='-', alpha=alpha_val, zorder=1, transform=tr)
+        ax.add_patch(patch)
 
 def draw_wash(ax, pos, angle_deg, power_pct):
     if power_pct < 5: return
@@ -70,7 +75,7 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False)
         r = np.sqrt(x_rot**2 + y_rot**2)
         ax.plot(theta, r, color=color, lw=1.5, zorder=3, alpha=0.5)
     else:
-        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=0.8)
+        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=10, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
     fig, ax = plt.subplots(figsize=(2.2, 2.2), subplot_kw={'projection': 'polar'})
