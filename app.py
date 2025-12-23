@@ -128,7 +128,7 @@ with col_c:
     
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # 1. Disegno Predizione (ora include PP_X e PP_Y per la cinematica corretta)
+    # 1. Disegno Predizione
     if show_prediction:
         traj = predict_trajectory(np.array([res_u, res_v]), M_tm, st.session_state.pp_x, st.session_state.pp_y)
         for idx, (tx, ty, th) in enumerate(traj):
@@ -191,7 +191,8 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    ax.set_xlim(-50, 50); ax.set_ylim(-60, 60); ax.set_aspect('equal'); ax.axis('off')
+    # --- ZOOM RIPRISTINATO ---
+    ax.set_xlim(-30, 30); ax.set_ylim(-40, 35); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     
     st.markdown("### 📊 Analisi Dinamica")
