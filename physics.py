@@ -57,17 +57,17 @@ def apply_fast_side_step(direction):
 
 def apply_turn_on_the_spot(direction):
     """
-    Logica 'Real Feel' per rotazione sul posto.
-    Dritta: DX 045°, SX 135° (Power 50% = 17.5t)
-    Sinistra: Speculare (SX 315°, DX 225°)
+    Logica Corretta Turning on the Spot (Real Feel)
+    SINISTRA (Antioraria): DX tira avanti (45°), SX spinge indietro (135°)
+    DRITTA (Oraria): DX spinge indietro (225°), SX tira avanti (315°)
     """
-    potenza = 50 # 50% di 35t = 17.5t
-    if direction == "DRITTA":
-        st.session_state.p1, st.session_state.a1 = potenza, 135
-        st.session_state.p2, st.session_state.a2 = potenza, 45
+    potenza = 50
+    if direction == "SINISTRA":
+        st.session_state.p1, st.session_state.a1 = potenza, 135  # SX
+        st.session_state.p2, st.session_state.a2 = potenza, 45   # DX
     else:
-        st.session_state.p1, st.session_state.a1 = potenza, 315
-        st.session_state.p2, st.session_state.a2 = potenza, 225
+        st.session_state.p1, st.session_state.a1 = potenza, 315  # SX
+        st.session_state.p2, st.session_state.a2 = potenza, 225  # DX
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
