@@ -32,7 +32,7 @@ def set_engine_state(p1, a1, p2, a2):
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.42
 
-st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION'</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
@@ -140,29 +140,28 @@ with col_c:
         ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
     else:
         if inter is not None:
-            # Vettori Trasportati Schiariti (alpha=0.3)
-            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, alpha=0.3, zorder=6)
-            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, alpha=0.3, zorder=6)
+            # Vettori Trasportati (Schiarendo molto per far risaltare il parallelogramma)
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, alpha=0.3, zorder=6, length_includes_head=True)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, alpha=0.3, zorder=6, length_includes_head=True)
             
-            # Punte esatte (apice della freccia)
+            # Calcolo punte esatte
             pSX_tip = inter + F_sx_eff*sc
             pDX_tip = inter + F_dx_eff*sc
             pRES_tip = inter + np.array([res_u, res_v])*sc
             
-            # Linee parallele di chiusura collegate alla PUNTA delle frecce
+            # Chiusura Parallelogramma sulle punte
             ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
-            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip_0 := pRES_tip[0]], [pDX_tip[1], pRES_tip_1 := pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             
-            # Prolungamenti originari
             ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4)
             ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
 
-    # Vettori Originali (Sempre visibili e pieni)
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.7)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.7)
+    # Vettori Originali
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.7, length_includes_head=True)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.7, length_includes_head=True)
 
     if res_ton > 0.1:
-        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=8)
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=8, length_includes_head=True)
     
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     
