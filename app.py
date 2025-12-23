@@ -189,10 +189,10 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    ax.set_xlim(-45, 45); ax.set_ylim(-55, 55); ax.set_aspect('equal'); ax.axis('off')
+    ax.set_xlim(-55, 55); ax.set_ylim(-65, 65); ax.set_aspect('equal'); ax.axis('off')
     st.pyplot(fig)
     
-    st.markdown("<p style='text-align: center; color: gray; font-size: 14px;'>I fantasmi blu rappresentano la posizione del rimorchiatore ogni 1,5 secondi per un totale di 30 secondi, considerando massa e inerzia.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #4A90E2; font-weight: bold; font-size: 14px;'>I fantasmi blu rappresentano la posizione del rimorchiatore ogni 1,5 secondi per un totale di 30 secondi, considerando massa e inerzia.</p>", unsafe_allow_html=True)
     
     st.markdown("### 📊 Analisi Dinamica")
     if wash_sx_hits_dx: st.error("⚠️ DX in scia del SX. Spinta DX ridotta -20% ⚠️")
