@@ -82,14 +82,15 @@ pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
-F_sx_set = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
-F_dx_set = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
+F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
+F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_set, pos_dx)
-wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_set, pos_sx)
+wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_eff_v, pos_dx)
+wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_eff_v, pos_sx)
 
 eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
-F_sx_eff, F_dx_eff = F_sx_set * eff_sx, F_dx_set * eff_dx
+F_sx_eff = F_sx_eff_v * eff_sx
+F_dx_eff = F_dx_eff_v * eff_dx
 ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
@@ -105,7 +106,6 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-# UI Layout
 col_l, col_c, col_r = st.columns([1, 2, 1])
 with col_l:
     st.slider("Potenza SX (%)", 0, 100, key="p1")
@@ -132,46 +132,40 @@ with col_c:
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
-    # Determinazione Origine Vettore Risultante
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     sc = 0.4
     
-    # Disegno Vettori e Costruzione
     if not show_construction:
-        # Visualizzazione Semplificata: Linee tratteggiate di trasporto verso l'origine del blu
-        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.4)
-        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.4)
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
     else:
-        # COSTRUZIONE GRAFICA TRADIZIONALE (Parallelogramma all'intersezione)
         if inter is not None:
-            # Vettori trasportati con la coda nel punto di intersezione
-            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.3, alpha=0.9, zorder=6)
-            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.3, alpha=0.9, zorder=6)
+            # Vettori Trasportati Schiariti (alpha=0.3)
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, alpha=0.3, zorder=6)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, alpha=0.3, zorder=6)
             
-            pSX_trans = inter + F_sx_eff*sc
-            pDX_trans = inter + F_dx_eff*sc
-            pRES = inter + np.array([res_u, res_v])*sc
+            # Punte esatte (apice della freccia)
+            pSX_tip = inter + F_sx_eff*sc
+            pDX_tip = inter + F_dx_eff*sc
+            pRES_tip = inter + np.array([res_u, res_v])*sc
             
-            # Linee parallele per chiudere il parallelogramma
-            ax.plot([pSX_trans[0], pRES[0]], [pSX_trans[1], pRES[1]], color='gray', ls='--', lw=1.2, alpha=0.7)
-            ax.plot([pDX_trans[0], pRES[0]], [pDX_trans[1], pRES[1]], color='gray', ls='--', lw=1.2, alpha=0.7)
+            # Linee parallele di chiusura collegate alla PUNTA delle frecce
+            ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             
-            # Prolungamenti sottili dai propulsori all'intersezione
-            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.5)
-            ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.5)
+            # Prolungamenti originari
+            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4)
+            ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
 
-    # Vettori originali sui propulsori (sempre presenti come riferimento fisico)
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.6)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.6)
+    # Vettori Originali (Sempre visibili e pieni)
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.7)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.7)
 
-    # Vettore Risultante Blu (nasce dall'intersezione o dal centro ponderato)
     if res_ton > 0.1:
-        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=7)
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=8)
     
-    # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     
-    # Freccia Rotazione (Momento)
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
