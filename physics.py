@@ -1,51 +1,6 @@
 import numpy as np
 import streamlit as st
-from constants import *
-
-def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
-    """
-    Simula il moto del rimorchiatore considerando massa, inerzia e damping.
-    Ritorna una lista di (x, y, heading_deg).
-    """
-    x, y, head_rad = 0.0, 0.0, 0.0
-    vx, vy, v_ang = 0.0, 0.0, 0.0
-    
-    trajectory = []
-    t = 0.0
-    dt = 0.1 
-    next_sample_time = 0.0
-    
-    while t <= duration + dt:
-        if t >= next_sample_time:
-            trajectory.append((x, y, np.degrees(head_rad)))
-            next_sample_time += step
-        
-        # Resistenze (Damping)
-        res_x = -vx * DAMPING_LINEAR_Y
-        res_y = -vy * DAMPING_LINEAR_X
-        res_m = -v_ang * DAMPING_ANGULAR
-        
-        # Accelerazioni
-        ax = (f_total_n[0] + res_x) / MASS
-        ay = (f_total_n[1] + res_y) / MASS
-        a_ang = (torque_nm + res_m) / IZ
-        
-        # Velocità
-        vx += ax * dt
-        vy += ay * dt
-        v_ang += a_ang * dt
-        
-        # Trasformazione in coordinate globali
-        c, s = np.cos(head_rad), np.sin(head_rad)
-        vx_global = vx * c + vy * s
-        vy_global = -vx * s + vy * c
-        
-        x += vx_global * dt
-        y += vy_global * dt
-        head_rad += v_ang * dt
-        t += dt
-        
-    return trajectory
+from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_X, K_Y, K_W
 
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
@@ -82,6 +37,7 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
+                st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
         else:
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
@@ -95,6 +51,7 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
                 st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
+                st.toast(f"Fast Sinistra: Slave {int(round(p_slave))}%", icon="⚡")
     except Exception as e:
         st.error(f"Errore geometrico: {e}")
 
@@ -127,3 +84,51 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         t = np.linalg.solve(matrix, p2 - p1)[0]
         return p1 + t * v1
     except: return None
+
+def predict_trajectory(f_res_local, m_ton_m, total_time=20.0, steps=10):
+    """Calcola la posizione futura integrando forze e drag idrodinamico."""
+    dt = 0.5  # Step di integrazione in secondi
+    n_total_steps = int(total_time / dt)
+    record_every = n_total_steps // steps
+    
+    # Stato iniziale (locale)
+    x, y, heading_deg = 0.0, 0.0, 0.0
+    vx, vy, omega = 0.0, 0.0, 0.0
+    
+    # Forze costanti in Newton (trasformate da tonnellate)
+    fx_const = f_res_local[0] * 1000 * 9.80665
+    fy_const = f_res_local[1] * 1000 * 9.80665
+    m_const = m_ton_m * 1000 * 9.80665
+    
+    results = []
+    for i in range(1, n_total_steps + 1):
+        # Calcolo Drag (quadratico)
+        dfx = -K_X * vx * abs(vx)
+        dfy = -K_Y * vy * abs(vy)
+        dm = -K_W * omega * abs(omega)
+        
+        # Accelerazioni (F = ma)
+        ax = (fx_const + dfx) / MASS
+        ay = (fy_const + dfy) / MASS
+        alpha = (m_const + dm) / I_Z
+        
+        # Update Velocità
+        vx += ax * dt
+        vy += ay * dt
+        omega += alpha * dt
+        
+        # Update Posizione nel World Frame (semplificato)
+        # psi (heading) 0 è Nord (+Y), positivo è Orario (Nautico)
+        # dHeading/dt = -omega (se omega > 0 è CCW/Sinistra)
+        rad_h = np.radians(heading_deg)
+        dx_world = vx * np.cos(rad_h) + vy * np.sin(rad_h)
+        dy_world = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
+        
+        x += dx_world * dt
+        y += dy_world * dt
+        heading_deg -= np.degrees(omega * dt)
+        
+        if i % record_every == 0:
+            results.append((x, y, heading_deg))
+            
+    return results
