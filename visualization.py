@@ -35,7 +35,8 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False)
         ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
-    fig, ax = plt.subplots(figsize=(3, 3), subplot_kw={'projection': 'polar'})
+    # Ridotta dimensione orologio da 3x3 a 2.2x2.2
+    fig, ax = plt.subplots(figsize=(2.2, 2.2), subplot_kw={'projection': 'polar'})
     ax.set_theta_zero_location('N')
     ax.set_theta_direction(-1)
     ax.set_yticks([]); ax.set_xticks(np.radians([0, 90, 180, 270]))
