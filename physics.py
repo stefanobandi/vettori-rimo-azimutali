@@ -3,54 +3,43 @@ import streamlit as st
 from constants import *
 
 def compute_trajectory(f_total_n, torque_nm, duration=30.0, step=1.5):
-    """
-    Simula il moto del rimorchiatore considerando massa, inerzia e damping.
-    Ritorna una lista di (x, y, heading_deg) campionata esattamente ogni 'step' secondi.
-    """
-    # Stato iniziale (locali = globali all'inizio)
+    """Simula il moto del rimorchiatore considerando massa, inerzia e damping."""
     x, y, head_rad = 0.0, 0.0, 0.0
     vx, vy, v_ang = 0.0, 0.0, 0.0
     
     trajectory = []
     t = 0.0
-    dt = 0.05 # Passo di integrazione molto fine per precisione
-    
-    # Calcoliamo quanti step di campionamento dobbiamo salvare
+    dt = 0.1 
     next_sample_time = 0.0
     
     while t <= duration + dt:
-        # Salvataggio campione
         if t >= next_sample_time:
             trajectory.append((x, y, np.degrees(head_rad)))
             next_sample_time += step
         
-        # 1. Calcolo resistenze (Damping)
-        res_x = -vx * DAMPING_LINEAR_Y # Sway
-        res_y = -vy * DAMPING_LINEAR_X # Surge
+        # Resistenze
+        res_x = -vx * DAMPING_LINEAR_Y
+        res_y = -vy * DAMPING_LINEAR_X
         res_m = -v_ang * DAMPING_ANGULAR
         
-        # 2. Accelerazioni (F = m*a)
+        # Accelerazioni
         ax = (f_total_n[0] + res_x) / MASS
         ay = (f_total_n[1] + res_y) / MASS
         a_ang = (torque_nm + res_m) / IZ
         
-        # 3. Aggiornamento velocità
+        # Velocità
         vx += ax * dt
         vy += ay * dt
         v_ang += a_ang * dt
         
-        # 4. Rotazione delle velocità da locali a globali
-        # Nota: usiamo l'angolo attuale per proiettare lo spostamento
+        # Trasformazione in coordinate globali (Heading 0 = Nord/Y+)
         c, s = np.cos(head_rad), np.sin(head_rad)
-        # In un sistema dove Y è avanti e X è destra:
         vx_global = vx * c + vy * s
         vy_global = -vx * s + vy * c
         
-        # 5. Aggiornamento posizione e angolo
         x += vx_global * dt
         y += vy_global * dt
         head_rad += v_ang * dt
-        
         t += dt
         
     return trajectory
@@ -66,9 +55,8 @@ def apply_slow_side_step(direction):
             a1_set, a2_set = alpha_deg, 180 - alpha_deg
         else:
             a1_set, a2_set = 180 + alpha_deg, 360 - alpha_deg
-        st.session_state.p1 = 50
+        st.session_state.p1, st.session_state.p2 = 50, 50
         st.session_state.a1 = int(round(a1_set % 360))
-        st.session_state.p2 = 50
         st.session_state.a2 = int(round(a2_set % 360))
     except Exception as e:
         st.error(f"Errore calcolo Slow: {e}")
@@ -90,7 +78,6 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
         else:
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
@@ -104,18 +91,16 @@ def apply_fast_side_step(direction):
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
                 st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Sinistra: Slave {int(round(p_slave))}%", icon="⚡")
     except Exception as e:
         st.error(f"Errore geometrico: {e}")
 
 def apply_turn_on_the_spot(direction):
-    potenza = 50
     if direction == "SINISTRA":
-        st.session_state.p1, st.session_state.a1 = potenza, 135
-        st.session_state.p2, st.session_state.a2 = potenza, 45
+        st.session_state.p1, st.session_state.a1 = 50, 135
+        st.session_state.p2, st.session_state.a2 = 50, 45
     else:
-        st.session_state.p1, st.session_state.a1 = potenza, 315
-        st.session_state.p2, st.session_state.a2 = potenza, 225
+        st.session_state.p1, st.session_state.a1 = 50, 315
+        st.session_state.p2, st.session_state.a2 = 50, 225
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
