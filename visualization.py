@@ -33,7 +33,7 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False)
         r = np.sqrt(x_rot**2 + y_rot**2)
         ax.plot(theta, r, color=color, lw=1.5, zorder=3, alpha=0.5)
     else:
-        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=0.8)
+        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=10, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
     fig, ax = plt.subplots(figsize=(2.2, 2.2), subplot_kw={'projection': 'polar'})
@@ -52,7 +52,6 @@ def plot_clock(azimuth_deg, color):
     return fig
 
 def get_hull_path():
-    """Restituisce il set di dati per il path dello scafo."""
     hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
     return [
         (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
@@ -67,20 +66,19 @@ def draw_static_elements(ax, pos_sx, pos_dx):
     ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
     
     # Fender
-    hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
+    hw, bow_tip, shoulder = 5.85, 16.25, 8.0
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
     ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
+    
+    # Cerchi dei propulsori (regola fissa 2.0m)
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
 
 def draw_hull_silhouette(ax, x, y, heading_deg, alpha=0.1):
-    """Disegna una sagoma semitrasparente traslata e ruotata."""
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
     path = Path(verts, codes)
-    
-    # Trasformazione: Rotazione (nautica invertita per matplotlib) e poi Traslazione
     t = Affine2D().rotate_deg(-heading_deg).translate(x, y) + ax.transData
     patch = PathPatch(path, facecolor='blue', alpha=alpha, edgecolor='blue', lw=0.5, transform=t, zorder=0.5)
     ax.add_patch(patch)
