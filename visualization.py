@@ -2,8 +2,46 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
+import matplotlib.transforms as mtransforms
 
-def draw_wash(ax, pos, angle_deg, power_pct, alpha=0.25):
+def get_hull_path():
+    """Ritorna i dati del percorso della carena."""
+    hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
+    return [
+        (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
+        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
+        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
+        (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
+    ]
+
+def draw_static_elements(ax, pos_sx, pos_dx):
+    path_data = get_hull_path()
+    codes, verts = zip(*path_data)
+    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
+    
+    # Fender
+    hw, bow_tip, shoulder = 5.85, 16.25, 8.0
+    fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
+    f_codes, f_verts = zip(*fender_data)
+    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
+    
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
+
+def draw_prediction(ax, dx, dy, d_angle_deg):
+    """Disegna la sagoma predetta traslata e ruotata."""
+    path_data = get_hull_path()
+    codes, verts = zip(*path_data)
+    hull_path = Path(verts, codes)
+    
+    # Creazione trasformazione: Rotazione (attorno all'origine 0,0 che è il CG approssimativo) e poi Traslazione
+    # Nota: la rotazione avviene in gradi, segno meno per coordinata nautica
+    tr = mtransforms.Affine2D().rotate_deg(-d_angle_deg).translate(dx, dy) + ax.transData
+    
+    patch = PathPatch(hull_path, facecolor='none', edgecolor='cyan', lw=1.5, ls='--', alpha=0.6, zorder=0, transform=tr)
+    ax.add_patch(patch)
+
+def draw_wash(ax, pos, angle_deg, power_pct):
     if power_pct < 5: return
     angle_wash_rad = np.radians(angle_deg + 180)
     length = (power_pct / 100) * 22.0 
@@ -16,9 +54,9 @@ def draw_wash(ax, pos, angle_deg, power_pct, alpha=0.25):
     p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
     p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
     verts = [p1, p2, p3, p4]
-    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=alpha, edgecolor='none', zorder=1.2))
+    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=1.2))
 
-def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False, alpha=0.8):
+def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     angle_rad = np.radians(angle_deg + 90)
     t = np.linspace(0, 2 * np.pi, 60)
     a = 1.6 * scale
@@ -30,9 +68,9 @@ def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False,
     if is_polar:
         theta = np.arctan2(x_rot, y_rot)
         r = np.sqrt(x_rot**2 + y_rot**2)
-        ax.plot(theta, r, color=color, lw=1.5, zorder=3, alpha=alpha * 0.6)
+        ax.plot(theta, r, color=color, lw=1.5, zorder=3, alpha=0.5)
     else:
-        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=alpha)
+        ax.plot(pos[0] + x_rot, pos[1] + y_rot, color=color, lw=2, zorder=5, alpha=0.8)
 
 def plot_clock(azimuth_deg, color):
     fig, ax = plt.subplots(figsize=(2.2, 2.2), subplot_kw={'projection': 'polar'})
@@ -49,52 +87,3 @@ def plot_clock(azimuth_deg, color):
     ax.grid(True, alpha=0.3)
     fig.patch.set_alpha(0)
     return fig
-
-def draw_static_elements(ax, pos_sx, pos_dx):
-    hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
-    path_data = [
-        (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
-        (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
-        (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
-    ]
-    codes, verts = zip(*path_data)
-    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
-    fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
-    f_codes, f_verts = zip(*fender_data)
-    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.2, zorder=2))
-
-def draw_ghost_state(ax, ghost_data, pos_sx, pos_dx, show_wash):
-    """Disegna i vettori e la scia salvati in trasparenza."""
-    sc = 0.4
-    g_alpha = 0.25
-    
-    # Scia fantasma
-    if show_wash:
-        draw_wash(ax, pos_sx, ghost_data["a1"], ghost_data["p1"], alpha=0.1)
-        draw_wash(ax, pos_dx, ghost_data["a2"], ghost_data["p2"], alpha=0.1)
-    
-    # Eliche fantasma
-    draw_propeller(ax, pos_sx, ghost_data["a1"], color='gray', alpha=0.3)
-    draw_propeller(ax, pos_dx, ghost_data["a2"], color='gray', alpha=0.3)
-    
-    # Vettori motori fantasma
-    for pos, force, color in [(pos_sx, ghost_data["F_sx"], 'red'), (pos_dx, ghost_data["F_dx"], 'green')]:
-        v_len = np.linalg.norm(force) * sc
-        if v_len > 0.1:
-            hw = min(0.4, v_len * 0.4); hl = min(0.6, v_len * 0.5)
-            ax.arrow(pos[0], pos[1], force[0]*sc, force[1]*sc, fc=color, ec=color, 
-                     width=0.08, head_width=hw, head_length=hl, zorder=3, alpha=g_alpha, length_includes_head=True, ls='--')
-            
-    # Risultante fantasma
-    res_f = ghost_data["res_v"]
-    res_ton = ghost_data["res_ton"]
-    origin = ghost_data["origin_res"]
-    
-    if res_ton > 0.1:
-        v_res_len = res_ton * sc
-        hw_res = min(0.6, v_res_len * 0.4); hl_res = min(0.9, v_res_len * 0.5)
-        ax.arrow(origin[0], origin[1], res_f[0]*sc, res_f[1]*sc, fc='blue', ec='blue', 
-                 width=0.15, head_width=hw_res, head_length=hl_res, alpha=g_alpha, zorder=3, length_includes_head=True, ls='--')
