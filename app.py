@@ -132,38 +132,46 @@ with col_c:
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
-    if not use_weighted:
-        origin_res = inter
-        if show_construction:
-            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r--', lw=1, alpha=0.3)
-            ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g--', lw=1, alpha=0.3)
-    else:
-        spinta_totale = (ton1_eff + ton2_eff)
-        w_x = (ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / spinta_totale if spinta_totale > 0.1 else 0.0
-        origin_res = np.array([w_x, POS_THRUSTERS_Y])
-
+    # Determinazione Origine Vettore Risultante
+    origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     sc = 0.4
-    # Frecce componenti
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4)
     
-    # Costruzione Vettoriale (Parallelogramma)
-    if show_construction and res_ton > 0.1:
-        # Linea da punta SX a punta Risultante
-        pSX = pos_sx + F_sx_eff*sc
-        pDX = pos_dx + F_dx_eff*sc
-        pRES = origin_res + np.array([res_u, res_v])*sc
-        ax.plot([pSX[0], pRES[0]], [pSX[1], pRES[1]], color='gray', ls=':', lw=1, alpha=0.6)
-        ax.plot([pDX[0], pRES[0]], [pDX[1], pRES[1]], color='gray', ls=':', lw=1, alpha=0.6)
-        # Linee di base per traslare i vettori all'origine comune
-        ax.plot([origin_res[0], pSX[0] + (origin_res[0]-pos_sx[0])], [origin_res[1], pSX[1] + (origin_res[1]-pos_sx[1])], color='red', alpha=0.2, lw=1)
-        ax.plot([origin_res[0], pDX[0] + (origin_res[0]-pos_dx[0])], [origin_res[1], pDX[1] + (origin_res[1]-pos_dx[1])], color='green', alpha=0.2, lw=1)
+    # Disegno Vettori e Costruzione
+    if not show_construction:
+        # Visualizzazione Semplificata: Linee tratteggiate di trasporto verso l'origine del blu
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.4)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.4)
+    else:
+        # COSTRUZIONE GRAFICA TRADIZIONALE (Parallelogramma all'intersezione)
+        if inter is not None:
+            # Vettori trasportati con la coda nel punto di intersezione
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.3, alpha=0.9, zorder=6)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.3, alpha=0.9, zorder=6)
+            
+            pSX_trans = inter + F_sx_eff*sc
+            pDX_trans = inter + F_dx_eff*sc
+            pRES = inter + np.array([res_u, res_v])*sc
+            
+            # Linee parallele per chiudere il parallelogramma
+            ax.plot([pSX_trans[0], pRES[0]], [pSX_trans[1], pRES[1]], color='gray', ls='--', lw=1.2, alpha=0.7)
+            ax.plot([pDX_trans[0], pRES[0]], [pDX_trans[1], pRES[1]], color='gray', ls='--', lw=1.2, alpha=0.7)
+            
+            # Prolungamenti sottili dai propulsori all'intersezione
+            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.5)
+            ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.5)
 
-    # Vettore Risultante
-    ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.4, zorder=4)
+    # Vettori originali sui propulsori (sempre presenti come riferimento fisico)
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.25, zorder=4, alpha=0.6)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.25, zorder=4, alpha=0.6)
+
+    # Vettore Risultante Blu (nasce dall'intersezione o dal centro ponderato)
+    if res_ton > 0.1:
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.6, alpha=0.7, zorder=7)
     
+    # Pivot Point
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=10)
     
+    # Freccia Rotazione (Momento)
     if abs(M_tm) > 1:
         p_s, p_e = (5, 24) if M_tm > 0 else (-5, 24), (-5, 24) if M_tm > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
