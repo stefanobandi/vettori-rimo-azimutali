@@ -85,71 +85,48 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-def predict_trajectory(f_res_local, m_pp_ton_m, pp_offset, total_time=20.0, steps=10):
-    """
-    Integrazione ancorata al Pivot Point usando il teorema di Steiner.
-    pp_offset: [pp_x, pp_y] rispetto al centro dello scafo.
-    """
-    dt = 0.5
+def predict_trajectory(f_res_local, m_ton_m, total_time=20.0, steps=10):
+    """Calcola la posizione futura integrando forze e drag idrodinamico."""
+    dt = 0.5  # Step di integrazione in secondi
     n_total_steps = int(total_time / dt)
     record_every = n_total_steps // steps
     
-    # 1. Calcolo Inerzia al Pivot Point (Steiner)
-    dist_pp = np.linalg.norm(pp_offset)
-    I_pp = I_Z + MASS * (dist_pp**2)
-    
-    # Stato iniziale (World = Local all'inizio)
-    # x, y rappresentano la posizione del Pivot Point
-    x_pp, y_pp, heading_deg = 0.0, 0.0, 0.0
+    # Stato iniziale (locale)
+    x, y, heading_deg = 0.0, 0.0, 0.0
     vx, vy, omega = 0.0, 0.0, 0.0
     
-    results = []
-    
-    # Conversioni Newton
+    # Forze costanti in Newton (trasformate da tonnellate)
     fx_const = f_res_local[0] * 1000 * 9.80665
     fy_const = f_res_local[1] * 1000 * 9.80665
-    m_const = m_pp_ton_m * 1000 * 9.80665
+    m_const = m_ton_m * 1000 * 9.80665
     
+    results = []
     for i in range(1, n_total_steps + 1):
-        # Drag (approssimato al centro di massa per semplicità)
+        # Calcolo Drag (quadratico)
         dfx = -K_X * vx * abs(vx)
         dfy = -K_Y * vy * abs(vy)
         dm = -K_W * omega * abs(omega)
         
-        # Accelerazioni al PP
+        # Accelerazioni (F = ma)
         ax = (fx_const + dfx) / MASS
         ay = (fy_const + dfy) / MASS
-        alpha = (m_const + dm) / I_pp
+        alpha = (m_const + dm) / I_Z
         
-        # Velocità
+        # Update Velocità
         vx += ax * dt
         vy += ay * dt
         omega += alpha * dt
         
-        # Update posizione PP nel World Frame
+        # Update Posizione nel World Frame (semplificato)
         rad_h = np.radians(heading_deg)
-        dx_w = vx * np.cos(rad_h) + vy * np.sin(rad_h)
-        dy_w = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
+        dx_world = vx * np.cos(rad_h) + vy * np.sin(rad_h)
+        dy_world = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
         
-        x_pp += dx_w * dt
-        y_pp += dy_w * dt
+        x += dx_world * dt
+        y += dy_world * dt
         heading_deg -= np.degrees(omega * dt)
         
         if i % record_every == 0:
-            # Calcoliamo la posizione del CENTRO dello scafo rispetto al PP ruotato
-            # Il centro è a -pp_offset rispetto al PP
-            rad_now = np.radians(heading_deg)
-            # Rotazione del vettore (Centro - PP)
-            # Inizialmente è [-pp_x, -pp_y]
-            c, s = np.cos(rad_now), np.sin(rad_now)
-            # Trasformazione coordinate per trovare il centro scafo
-            # (Matematica per ruotare lo scafo attorno al PP)
-            offset_x_rot = -pp_offset[0] * c - (-pp_offset[1]) * s
-            offset_y_rot = -pp_offset[0] * s + (-pp_offset[1]) * c
-            
-            x_hull = x_pp + offset_x_rot
-            y_hull = y_pp + offset_y_rot
-            
-            results.append((x_hull, y_hull, heading_deg))
+            results.append((x, y, heading_deg))
             
     return results
