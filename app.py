@@ -106,24 +106,26 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-# Layout colonne ottimizzato per ingrandire il centro [0.7, 3.4, 0.7]
-col_l, col_c, col_r = st.columns([0.7, 3.4, 0.7])
+# Layout colonne: allargate le laterali per slider più lunghi [1.2, 2.6, 1.2]
+col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 with col_l:
-    st.slider("PotSX %", 0, 100, key="p1")
+    st.slider("Pot. SX %", 0, 100, key="p1")
     st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    st.slider("AziSX °", 0, 360, key="a1")
+    st.slider("Azi. SX °", 0, 360, key="a1")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
 with col_r:
-    st.slider("PotDX %", 0, 100, key="p2")
+    st.slider("Pot. DX %", 0, 100, key="p2")
     st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    st.slider("AziDX °", 0, 360, key="a2")
+    st.slider("Azi. DX °", 0, 360, key="a2")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
+    # Compattazione Pivot Point: X e Y su due colonne all'interno dell'expander
     with st.expander("📍 Pivot Point", expanded=True):
-        st.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
-        st.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
-    # Ingrandito figsize del rimorchiatore
+        pcol1, pcol2 = st.columns(2)
+        pcol1.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
+        pcol2.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
+    
     fig, ax = plt.subplots(figsize=(10, 12))
     draw_static_elements(ax, pos_sx, pos_dx)
     
