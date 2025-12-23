@@ -106,23 +106,25 @@ use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-col_l, col_c, col_r = st.columns([1, 2, 1])
+# Layout colonne ottimizzato per ingrandire il centro [0.7, 3.4, 0.7]
+col_l, col_c, col_r = st.columns([0.7, 3.4, 0.7])
 with col_l:
-    st.slider("Potenza SX (%)", 0, 100, key="p1")
+    st.slider("PotSX %", 0, 100, key="p1")
     st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    st.slider("Azimut SX (°)", 0, 360, key="a1")
+    st.slider("AziSX °", 0, 360, key="a1")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
 with col_r:
-    st.slider("Potenza DX (%)", 0, 100, key="p2")
+    st.slider("PotDX %", 0, 100, key="p2")
     st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    st.slider("Azimut DX (°)", 0, 360, key="a2")
+    st.slider("AziDX °", 0, 360, key="a2")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
     with st.expander("📍 Pivot Point", expanded=True):
         st.slider("Long. (Y)", -16.0, 16.0, key="pp_y")
         st.slider("Trasv. (X)", -5.0, 5.0, key="pp_x")
-    fig, ax = plt.subplots(figsize=(8, 10))
+    # Ingrandito figsize del rimorchiatore
+    fig, ax = plt.subplots(figsize=(10, 12))
     draw_static_elements(ax, pos_sx, pos_dx)
     
     if show_wash:
@@ -142,38 +144,29 @@ with col_c:
         if inter is not None:
             v_sx_len = np.linalg.norm(F_sx_eff)*sc
             v_dx_len = np.linalg.norm(F_dx_eff)*sc
-            
-            # Parametri punta scalati per i trasportati
             hw_sx = min(0.3, v_sx_len * 0.4); hl_sx = min(0.4, v_sx_len * 0.5)
             hw_dx = min(0.3, v_dx_len * 0.4); hl_dx = min(0.4, v_dx_len * 0.5)
-
             ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
                      width=0.08, head_width=hw_sx, head_length=hl_sx, alpha=0.3, zorder=6, length_includes_head=True)
             ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
                      width=0.08, head_width=hw_dx, head_length=hl_dx, alpha=0.3, zorder=6, length_includes_head=True)
-            
             pSX_tip = inter + F_sx_eff*sc
             pDX_tip = inter + F_dx_eff*sc
             pRES_tip = inter + np.array([res_u, res_v])*sc
-            
             ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
-            
             ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4)
             ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
 
-    # Vettori Originali con punte scalate
     v_sx_orig_len = np.linalg.norm(F_sx_eff)*sc
     v_dx_orig_len = np.linalg.norm(F_dx_eff)*sc
     hw_sx_o = min(0.5, v_sx_orig_len * 0.4); hl_sx_o = min(0.7, v_sx_orig_len * 0.5)
     hw_dx_o = min(0.5, v_dx_orig_len * 0.4); hl_dx_o = min(0.7, v_dx_orig_len * 0.5)
-
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', 
              width=0.15, head_width=hw_sx_o, head_length=hl_sx_o, zorder=4, alpha=0.7, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', 
              width=0.15, head_width=hw_dx_o, head_length=hl_dx_o, zorder=4, alpha=0.7, length_includes_head=True)
 
-    # Vettore Risultante Blu con punta scalata
     if res_ton > 0.1:
         v_res_len = res_ton * sc
         hw_res = min(0.8, v_res_len * 0.4); hl_res = min(1.2, v_res_len * 0.5)
