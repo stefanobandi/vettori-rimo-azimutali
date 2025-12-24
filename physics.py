@@ -1,4 +1,3 @@
-Python
 import numpy as np
 import streamlit as st
 from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_X, K_Y, K_W
