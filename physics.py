@@ -3,7 +3,6 @@ import streamlit as st
 from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_Y, K_W, K_X_BOW, K_X_STERN, Y_BOW_CP, Y_STERN_CP
 
 def apply_slow_side_step(direction):
-    # La logica geometrica usa ancora il PP come "target" desiderato
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
     dist_x_calcolo = POS_THRUSTERS_X 
@@ -87,16 +86,15 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     except: return None
 
 def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
-    # NOTA: m_ton_m ora deve essere il momento rispetto al Baricentro (0,0), non al PP
     dt = 0.1
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale (nel sistema di riferimento nave)
+    # Stato iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
     vx, vy, omega = 0.0, 0.0, 0.0
     
-    # Forze costanti dai motori (applicate al Baricentro 0,0 come risultante e momento)
+    # Forze costanti dai motori (applicate al Baricentro 0,0)
     fx_thrust = f_res_local[0] * 1000 * 9.80665
     fy_thrust = f_res_local[1] * 1000 * 9.80665
     m_thrust = m_ton_m * 1000 * 9.80665
@@ -104,31 +102,34 @@ def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
     results = []
     
     for i in range(1, n_total_steps + 1):
-        # 1. Calcolo velocità locali nei punti chiave (Prua/Skeg e Poppa)
-        # v_local_x = v_nave_x + omega * distanza_longitudinale
+        # 1. Calcolo velocità locali a Prua e Poppa
+        # La velocità trasversale locale include la componente di rotazione
         vx_bow = vx + omega * Y_BOW_CP
         vx_stern = vx + omega * Y_STERN_CP
         
         # 2. Calcolo Forze Idrodinamiche (Resistenza)
-        # Longitudinale (Globale)
         fy_drag = -K_Y * vy * abs(vy)
         
-        # Trasversale Differenziata (Skeg vs Poppa)
+        # Resistenza laterale differenziata
         fx_drag_bow = -K_X_BOW * vx_bow * abs(vx_bow)
         fx_drag_stern = -K_X_STERN * vx_stern * abs(vx_stern)
         
-        # Resistenza Rotazionale Pura (damping)
         m_drag_rot = -K_W * omega * abs(omega)
         
-        # 3. Somma delle Forze e Momenti (Rispetto al Baricentro 0,0)
+        # 3. Somma delle Forze
         fx_total = fx_thrust + fx_drag_bow + fx_drag_stern
         fy_total = fy_thrust + fy_drag
         
-        # Il momento generato dalle resistenze laterali dipende dal braccio di leva
-        m_from_drag = (fx_drag_bow * Y_BOW_CP) + (fx_drag_stern * Y_STERN_CP)
-        m_total = m_thrust + m_from_drag + m_drag_rot
+        # 4. Somma dei Momenti (CORRETTO: M = -y * Fx)
+        # La forza resistente a prua (se ci muoviamo a destra, forza è sinistra/negativa)
+        # applicata a Y positivo, crea un momento CCW (positivo).
+        # Formula: M = x*Fy - y*Fx. Qui x=0. Quindi M = -y * Fx.
+        m_from_drag_bow = -(Y_BOW_CP * fx_drag_bow)
+        m_from_drag_stern = -(Y_STERN_CP * fx_drag_stern)
         
-        # 4. Integrazione Newtoniana (F=ma)
+        m_total = m_thrust + m_from_drag_bow + m_from_drag_stern + m_drag_rot
+        
+        # 5. Integrazione
         ax = fx_total / MASS
         ay = fy_total / MASS
         alpha = m_total / I_Z
@@ -137,9 +138,8 @@ def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
         vy += ay * dt
         omega += alpha * dt
         
-        # 5. Trasformazione nel sistema mondo per tracciare la rotta
+        # 6. Trasformazione mondo
         rad_h = np.radians(heading_deg)
-        # Velocità nel sistema mondo
         dx_w = vx * np.cos(rad_h) + vy * np.sin(rad_h)
         dy_w = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
         
