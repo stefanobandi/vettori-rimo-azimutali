@@ -91,9 +91,9 @@ wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_eff_v, pos_dx)
 wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_eff_v, pos_sx)
 eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
 
-# Vettori forza effettivi (con penalità)
-F_sx_eff = F_sx_eff_v * eff_sx
-F_dx_eff = F_dx_eff_v * eff_dx
+# Vettori forza effettivi (con penalità) - FIX: Sanitizzazione NaN
+F_sx_eff = np.nan_to_num(F_sx_eff_v * eff_sx)
+F_dx_eff = np.nan_to_num(F_dx_eff_v * eff_dx)
 ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
 # Risultanti globali
@@ -145,6 +145,9 @@ with col_c:
         # Passiamo il momento rispetto al Baricentro (M_tm_CG) e NON passiamo più pp_x/pp_y
         traj = predict_trajectory(np.array([res_u, res_v]), M_tm_CG, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
+            # FIX: Controllo se i valori della traiettoria sono validi (no NaN)
+            if not np.isfinite(tx) or not np.isfinite(ty) or not np.isfinite(th):
+                continue
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
             draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
             
