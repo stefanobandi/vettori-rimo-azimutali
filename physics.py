@@ -1,8 +1,9 @@
 import numpy as np
 import streamlit as st
-from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_X, K_Y, K_W
+from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_Y, K_W, K_X_BOW, K_X_STERN, Y_BOW_CP, Y_STERN_CP
 
 def apply_slow_side_step(direction):
+    # La logica geometrica usa ancora il PP come "target" desiderato
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
     dist_x_calcolo = POS_THRUSTERS_X 
@@ -85,54 +86,62 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-def predict_trajectory(f_res_local, m_ton_m, pp_x, pp_y, total_time=30.0, steps=20):
-    """
-    Calcola la posizione futura integrando forze e drag idrodinamico,
-    rispettando rigorosamente la rotazione attorno al Pivot Point (PP).
-    """
+def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
+    # NOTA: m_ton_m ora deve essere il momento rispetto al Baricentro (0,0), non al PP
     dt = 0.1
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale del centro (0,0) nel frame globale all'istante t=0
+    # Stato iniziale (nel sistema di riferimento nave)
     x, y, heading_deg = 0.0, 0.0, 0.0
     vx, vy, omega = 0.0, 0.0, 0.0
     
-    # Forze in Newton
-    fx_const = f_res_local[0] * 1000 * 9.80665
-    fy_const = f_res_local[1] * 1000 * 9.80665
-    m_const = m_ton_m * 1000 * 9.80665
+    # Forze costanti dai motori (applicate al Baricentro 0,0 come risultante e momento)
+    fx_thrust = f_res_local[0] * 1000 * 9.80665
+    fy_thrust = f_res_local[1] * 1000 * 9.80665
+    m_thrust = m_ton_m * 1000 * 9.80665
     
     results = []
+    
     for i in range(1, n_total_steps + 1):
-        # 1. Calcolo Drag locale (smorzamento)
-        dfx = -K_X * vx * abs(vx)
-        dfy = -K_Y * vy * abs(vy)
-        dm = -K_W * omega * abs(omega)
+        # 1. Calcolo velocità locali nei punti chiave (Prua/Skeg e Poppa)
+        # v_local_x = v_nave_x + omega * distanza_longitudinale
+        vx_bow = vx + omega * Y_BOW_CP
+        vx_stern = vx + omega * Y_STERN_CP
         
-        # 2. Accelerazioni (Newton -> Moto)
-        ax = (fx_const + dfx) / MASS
-        ay = (fy_const + dfy) / MASS
-        alpha = (m_const + dm) / I_Z
+        # 2. Calcolo Forze Idrodinamiche (Resistenza)
+        # Longitudinale (Globale)
+        fy_drag = -K_Y * vy * abs(vy)
         
-        # 3. Update Velocità angolare e lineare
+        # Trasversale Differenziata (Skeg vs Poppa)
+        fx_drag_bow = -K_X_BOW * vx_bow * abs(vx_bow)
+        fx_drag_stern = -K_X_STERN * vx_stern * abs(vx_stern)
+        
+        # Resistenza Rotazionale Pura (damping)
+        m_drag_rot = -K_W * omega * abs(omega)
+        
+        # 3. Somma delle Forze e Momenti (Rispetto al Baricentro 0,0)
+        fx_total = fx_thrust + fx_drag_bow + fx_drag_stern
+        fy_total = fy_thrust + fy_drag
+        
+        # Il momento generato dalle resistenze laterali dipende dal braccio di leva
+        m_from_drag = (fx_drag_bow * Y_BOW_CP) + (fx_drag_stern * Y_STERN_CP)
+        m_total = m_thrust + m_from_drag + m_drag_rot
+        
+        # 4. Integrazione Newtoniana (F=ma)
+        ax = fx_total / MASS
+        ay = fy_total / MASS
+        alpha = m_total / I_Z
+        
         vx += ax * dt
         vy += ay * dt
         omega += alpha * dt
         
-        # 4. Velocità effettiva del centro (0,0) indotta dalla rotazione attorno al PP
-        # Se ruota attorno al PP, la velocità del centro è la somma del moto lineare 
-        # e della rotazione del braccio (Centro - PP)
-        v_rot_x = -omega * (0 - pp_y)
-        v_rot_y = omega * (0 - pp_x)
-        
-        vx_final = vx + v_rot_x
-        vy_final = vy + v_rot_y
-        
-        # 5. Proiezione nel sistema globale (World Frame)
+        # 5. Trasformazione nel sistema mondo per tracciare la rotta
         rad_h = np.radians(heading_deg)
-        dx_w = vx_final * np.cos(rad_h) + vy_final * np.sin(rad_h)
-        dy_w = -vx_final * np.sin(rad_h) + vy_final * np.cos(rad_h)
+        # Velocità nel sistema mondo
+        dx_w = vx * np.cos(rad_h) + vy * np.sin(rad_h)
+        dy_w = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
         
         x += dx_w * dt
         y += dy_w * dt
