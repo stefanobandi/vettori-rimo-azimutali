@@ -37,7 +37,7 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' �
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Fisica:</b> Simplified Captain's Logic
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Fisica:</b> Modello A (Pivot) & B (Poppa)
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -75,7 +75,6 @@ with st.sidebar:
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
-# Baricentro per calcolo momenti fisici puri
 cg_pos = np.array([0.0, 0.0]) 
 
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
@@ -96,19 +95,15 @@ F_sx_eff = F_sx_eff_v * eff_sx
 F_dx_eff = F_dx_eff_v * eff_dx
 ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
-# Risultanti globali
+# Risultanti globali (solo per display telemetria)
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
-
-# Calcolo Momento rispetto al Baricentro (0,0) per la fisica
-# Nota: La forza laterale (u) genera momento in base alla distanza Y dal baricentro
-# Nota: La forza longitudinale (v) genera momento in base alla distanza X dal baricentro
 M_tm_CG = ((pos_sx-cg_pos)[0]*F_sx_eff[1] - (pos_sx-cg_pos)[1]*F_sx_eff[0] + 
            (pos_dx-cg_pos)[0]*F_dx_eff[1] - (pos_dx-cg_pos)[1]*F_dx_eff[0])
 M_knm = M_tm_CG * G_ACCEL
 
-# Calcolo intersezione vettori (Costruzione geometrica)
+# Calcolo intersezione vettori
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 use_weighted = True
 if inter is not None:
@@ -142,10 +137,11 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # Calcolo Traiettoria
+    # --- PREDIZIONE CON NUOVA LOGICA A-B ---
     traj = []
     if show_prediction:
-        traj = predict_trajectory(np.array([res_u, res_v]), M_tm_CG, total_time=30.0)
+        # Passiamo le forze singole e le posizioni per calcolare le leve A-B internamente
+        traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
             draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
@@ -159,7 +155,6 @@ with col_c:
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
-    # Costruzione vettoriale
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     sc = 0.7
     
@@ -183,28 +178,42 @@ with col_c:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
     
-    # Visualizziamo il Pivot Point (Target)
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Target PP")
     
     if abs(M_tm_CG) > 1:
         p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    # --- GESTIONE ZOOM DINAMICO ---
+    # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
     if show_prediction and len(traj) > 0:
-        # Estraiamo coordinate min e max dalla traiettoria
-        all_x = [p[0] for p in traj] + [-15, 15] # includiamo lo scafo base
-        all_y = [p[1] for p in traj] + [-20, 20]
+        # Punti dello scafo statico
+        base_x = [-15, 15]
+        base_y = [-25, 20]
+        # Punti della traiettoria
+        traj_x = [p[0] for p in traj]
+        traj_y = [p[1] for p in traj]
+        
+        all_x = base_x + traj_x
+        all_y = base_y + traj_y
         
         min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
         
-        # Aggiungiamo margine
-        margin = 10.0
-        ax.set_xlim(min_x - margin, max_x + margin)
-        ax.set_ylim(min_y - margin, max_y + margin)
+        # Calcoliamo il centro del bounding box
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        
+        # Calcoliamo la dimensione massima (Span)
+        span_x = max_x - min_x
+        span_y = max_y - min_y
+        max_span = max(span_x, span_y) * 1.1 # +10% margine
+        
+        # Impostiamo i limiti centrati, creando un box quadrato
+        # Questo fa sì che se il box si ingrandisce, la nave "rimpicciolisce"
+        ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
+        ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
     else:
-        # Zoom standard fisso
+        # Default view
         ax.set_xlim(-30, 30)
         ax.set_ylim(-40, 35)
         
@@ -213,7 +222,7 @@ with col_c:
     st.pyplot(fig)
     
     if show_prediction:
-        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: 30s (Metodo 'Captain's Feel')</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
 
 # --- TABELLA RIEPILOGATIVA FINALE ---
 st.write("---")
