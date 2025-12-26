@@ -85,7 +85,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA FISICA "A-B Model" ---
+# --- NUOVA LOGICA FISICA "A-B Model" (Corretta) ---
 # Punto A (Pivot): Definito dall'utente (st.session_state.pp_y)
 # Punto B (Poppa): Punto medio propulsori (y = -12.0)
 
@@ -98,8 +98,7 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     point_B_y = POS_THRUSTERS_Y # -12.0
     point_A_y = pp_y            # 5.30 default
     
-    # Calcolo Braccio di Leva (Distanza A-B)
-    # Se il pivot è avanti e i motori dietro, la distanza è positiva e grande (~17m)
+    # Calcolo Braccio di Leva (Distanza A-B) (~17.3m positivi)
     lever_arm = point_A_y - point_B_y 
     
     # 1. Calcolo Forza Totale X e Y (Applicate al Punto B - Poppa)
@@ -107,36 +106,18 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
     
     # 2. Calcolo Momenti (Torque)
-    # Momento 1: "Coppia Pura" (es. motori contrapposti). Calcolata localmente a B.
-    # Usiamo il prodotto vettoriale 2D (cross product) per ogni motore rispetto al centro B
-    # B è il centro tra i due propulsori.
+    # Momento 1: "Coppia Pura" (Rotazione su B)
     center_B = np.array([0.0, point_B_y])
-    
-    # Braccio motore SX rispetto a B (es. -2.7m)
     r_sx = pos_sx - center_B 
     r_dx = pos_dx - center_B
     
-    # Momento generato dalla spinta differenziale (Torque su B)
-    # Cross product in 2D: r_x * F_y - r_y * F_x
     M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
                (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
                
-    # Momento 2: "Effetto Leva Laterale"
-    # Una forza laterale X applicata in B, se facciamo perno in A, genera un momento.
-    # Forza positiva (verso destra) a poppa -> Spinge la poppa a dritta -> La prua va a sinistra (Rotazione Anti-oraria / Positiva)
-    # Quindi M_lever = F_total_x * lever_arm
-    # (Attenzione ai segni: In questo sistema grafico, rotazione oraria è negativa, antioraria è positiva matematicamente, ma heading nautico è opposto).
-    # Nel sistema matematico standard: Fx positiva a poppa (y negativo rispetto a pivot) genera momento negativo (orario).
-    # Verifichiamo: Spinta a dritta a poppa -> Nave gira a sinistra (Heading diminuisce).
-    # Quindi il momento matematico deve essere positivo (perché heading nautico 0->359).
-    # Aspetta, Heading nautico aumenta verso destra (Clockwise).
-    # Spinta a dritta (X+) -> Rotazione a sinistra (Counter-Clockwise) -> Heading Diminuisce.
-    # Quindi Torque deve essere NEGATIVO rispetto all'heading nautico?
-    # No, usiamo la convenzione standard: Heading 0.
-    # Spinta X+ a poppa. Poppa va a destra. Prua va a sinistra. Heading diventa 359, 358...
-    # Quindi Rate of Turn (ROT) deve essere negativo.
-    
-    M_lever = -F_total_x * lever_arm
+    # Momento 2: "Effetto Leva Laterale" (CORRETTO)
+    # Spinta Poppa a Destra (+Fx) -> Prua ruota a Sinistra (CCW, Momento +)
+    # Quindi segno positivo.
+    M_lever = F_total_x * lever_arm
     
     # Momento Totale
     M_total = M_pure_B + M_lever
@@ -177,15 +158,15 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         c, s = np.cos(rad), np.sin(rad)
         
         # Velocità mondo
-        # v (Surge) è lungo l'asse della nave. u (Sway) è laterale.
-        # dx = v * sin(h) + u * cos(h) ... (Attenzione coordinate nautiche)
-        # Heading 0 (Nord/Alto) -> v su Y, u su X.
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
-        heading_deg -= np.degrees(r * dt) # Meno per convenzione nautica vs matematica
+        
+        # Heading nautico (0=N, 90=E)
+        # r positivo (CCW) -> Heading diminuisce (va verso Ovest/350°)
+        heading_deg -= np.degrees(r * dt)
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
