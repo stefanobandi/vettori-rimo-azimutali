@@ -1,9 +1,8 @@
 import numpy as np
 import streamlit as st
-from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS, I_Z, K_Y, K_W, K_X_BOW, K_X_STERN, Y_BOW_CP, Y_STERN_CP
+from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS
 
 def apply_slow_side_step(direction):
-    # La logica geometrica usa ancora il PP come "target" desiderato
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
     dist_x_calcolo = POS_THRUSTERS_X 
@@ -86,66 +85,83 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
+# --- NUOVA LOGICA FISICA "CAPTAIN'S FEEL" ---
+# Semplificata: Y spinge prua, X spinge poppa (rotazione)
+
 def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
-    # NOTA: m_ton_m ora deve essere il momento rispetto al Baricentro (0,0), non al PP
-    dt = 0.1
+    dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale (nel sistema di riferimento nave)
+    # Stato iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
-    vx, vy, omega = 0.0, 0.0, 0.0
+    u, v, r = 0.0, 0.0, 0.0 # Velocità surge (Y), sway (X), yaw rate (Rotazione)
+
+    # Parametri "Sensoriali" (Tarati per simulare 700t in acqua)
+    # Massa virtuale aumentata per simulare l'inerzia dell'acqua trascinata
+    VIRTUAL_MASS_Y = MASS * 1.2   # Avanzare è "più facile"
+    VIRTUAL_MASS_X = MASS * 2.5   # Spostarsi di lato è "molto pesante"
+    VIRTUAL_INERTIA = 70000000.0 * 2.0 # Inerzia rotazionale alta
     
-    # Forze costanti dai motori (applicate al Baricentro 0,0 come risultante e momento)
-    fx_thrust = f_res_local[0] * 1000 * 9.80665
-    fy_thrust = f_res_local[1] * 1000 * 9.80665
-    m_thrust = m_ton_m * 1000 * 9.80665
+    # Smorzamento (Freno idrodinamico)
+    # Valori alti impediscono al rimorchiatore di partire a razzo
+    DAMPING_SURGE = 25000.0     # Freno avanzamento
+    DAMPING_SWAY = 90000.0      # Freno laterale (alto per simulare lo Skeg che resiste)
+    DAMPING_YAW = 60000000.0    # Freno rotazione
     
+    # Conversione Forze Input
+    # f_res_local[1] è la componente Y (Longitudinale)
+    # f_res_local[0] è la componente X (Laterale)
+    Fx_input = f_res_local[0] * 1000 * 9.81
+    Fy_input = f_res_local[1] * 1000 * 9.81
+    Mz_input = m_ton_m * 1000 * 9.81
+
     results = []
     
-    for i in range(1, n_total_steps + 1):
-        # 1. Calcolo velocità locali nei punti chiave (Prua/Skeg e Poppa)
-        # v_local_x = v_nave_x + omega * distanza_longitudinale
-        vx_bow = vx + omega * Y_BOW_CP
-        vx_stern = vx + omega * Y_STERN_CP
+    for i in range(n_total_steps):
+        # 1. Calcolo Forze Smorzanti (Resistenza)
+        # Più vai veloce, più l'acqua ti frena (linear + quadratic approximation)
+        Fx_drag = -(DAMPING_SWAY * u + 2000.0 * u * abs(u))
+        Fy_drag = -(DAMPING_SURGE * v + 1000.0 * v * abs(v))
+        Mz_drag = -(DAMPING_YAW * r + 10000000.0 * r * abs(r))
         
-        # 2. Calcolo Forze Idrodinamiche (Resistenza)
-        # Longitudinale (Globale)
-        fy_drag = -K_Y * vy * abs(vy)
+        # 2. Equazioni del Moto (F = ma -> a = F/m)
+        du = (Fx_input + Fx_drag) / VIRTUAL_MASS_X
+        dv = (Fy_input + Fy_drag) / VIRTUAL_MASS_Y
+        dr = (Mz_input + Mz_drag) / VIRTUAL_INERTIA
         
-        # Trasversale Differenziata (Skeg vs Poppa)
-        fx_drag_bow = -K_X_BOW * vx_bow * abs(vx_bow)
-        fx_drag_stern = -K_X_STERN * vx_stern * abs(vx_stern)
+        # 3. Aggiornamento Velocità
+        u += du * dt # Velocità Laterale (Sway)
+        v += dv * dt # Velocità Longitudinale (Surge)
+        r += dr * dt # Velocità Rotazione (Yaw rate)
         
-        # Resistenza Rotazionale Pura (damping)
-        m_drag_rot = -K_W * omega * abs(omega)
-        
-        # 3. Somma delle Forze e Momenti (Rispetto al Baricentro 0,0)
-        fx_total = fx_thrust + fx_drag_bow + fx_drag_stern
-        fy_total = fy_thrust + fy_drag
-        
-        # Il momento generato dalle resistenze laterali dipende dal braccio di leva
-        m_from_drag = (fx_drag_bow * Y_BOW_CP) + (fx_drag_stern * Y_STERN_CP)
-        m_total = m_thrust + m_from_drag + m_drag_rot
-        
-        # 4. Integrazione Newtoniana (F=ma)
-        ax = fx_total / MASS
-        ay = fy_total / MASS
-        alpha = m_total / I_Z
-        
-        vx += ax * dt
-        vy += ay * dt
-        omega += alpha * dt
-        
-        # 5. Trasformazione nel sistema mondo per tracciare la rotta
+        # 4. Aggiornamento Posizione (Nel mondo)
         rad_h = np.radians(heading_deg)
-        # Velocità nel sistema mondo
-        dx_w = vx * np.cos(rad_h) + vy * np.sin(rad_h)
-        dy_w = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
+        c, s = np.cos(rad_h), np.sin(rad_h)
         
-        x += dx_w * dt
-        y += dy_w * dt
-        heading_deg -= np.degrees(omega * dt)
+        # Proiettiamo le velocità locali (u,v) nel sistema mondo (dx, dy)
+        # Nota: v è l'asse Y nave (prua), u è l'asse X nave (destra)
+        dx_world = u * c + v * s  # Errore comune: qui v è forward (Y), u è side (X)
+                                  # Correggiamo rotazione standard:
+                                  # X mondo = X_local * cos - Y_local * sin ? No.
+                                  # Se heading è 0 (Nord/Alto):
+                                  # v (Surge) -> muove su Y mondo
+                                  # u (Sway) -> muove su X mondo
+        
+        # Rotazione vettoriale standard:
+        # X_w = u * cos(h) - v * sin(h)  <-- Attenzione al sistema di riferimento grafico
+        # Y_w = u * sin(h) + v * cos(h)
+        
+        # Nel nostro grafico Y è in alto (Prua) e Heading 0 è Nord.
+        # u (Sway, laterale destra)
+        # v (Surge, avanti)
+        
+        dx_world = u * np.cos(rad_h) + v * np.sin(rad_h) # Componente X
+        dy_world = -u * np.sin(rad_h) + v * np.cos(rad_h) # Componente Y
+        
+        x += dx_world * dt
+        y += dy_world * dt
+        heading_deg -= np.degrees(r * dt) # Meno perché rotazione oraria è positiva nei grafici nautici
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
