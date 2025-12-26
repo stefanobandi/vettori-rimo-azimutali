@@ -85,83 +85,107 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA FISICA "CAPTAIN'S FEEL" ---
-# Semplificata: Y spinge prua, X spinge poppa (rotazione)
+# --- NUOVA LOGICA FISICA "A-B Model" ---
+# Punto A (Pivot): Definito dall'utente (st.session_state.pp_y)
+# Punto B (Poppa): Punto medio propulsori (y = -12.0)
 
-def predict_trajectory(f_res_local, m_ton_m, total_time=30.0, steps=20):
+def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Stato iniziale
+    # Parametri Modello
+    point_B_y = POS_THRUSTERS_Y # -12.0
+    point_A_y = pp_y            # 5.30 default
+    
+    # Calcolo Braccio di Leva (Distanza A-B)
+    # Se il pivot è avanti e i motori dietro, la distanza è positiva e grande (~17m)
+    lever_arm = point_A_y - point_B_y 
+    
+    # 1. Calcolo Forza Totale X e Y (Applicate al Punto B - Poppa)
+    F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
+    F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
+    
+    # 2. Calcolo Momenti (Torque)
+    # Momento 1: "Coppia Pura" (es. motori contrapposti). Calcolata localmente a B.
+    # Usiamo il prodotto vettoriale 2D (cross product) per ogni motore rispetto al centro B
+    # B è il centro tra i due propulsori.
+    center_B = np.array([0.0, point_B_y])
+    
+    # Braccio motore SX rispetto a B (es. -2.7m)
+    r_sx = pos_sx - center_B 
+    r_dx = pos_dx - center_B
+    
+    # Momento generato dalla spinta differenziale (Torque su B)
+    # Cross product in 2D: r_x * F_y - r_y * F_x
+    M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
+               (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
+               
+    # Momento 2: "Effetto Leva Laterale"
+    # Una forza laterale X applicata in B, se facciamo perno in A, genera un momento.
+    # Forza positiva (verso destra) a poppa -> Spinge la poppa a dritta -> La prua va a sinistra (Rotazione Anti-oraria / Positiva)
+    # Quindi M_lever = F_total_x * lever_arm
+    # (Attenzione ai segni: In questo sistema grafico, rotazione oraria è negativa, antioraria è positiva matematicamente, ma heading nautico è opposto).
+    # Nel sistema matematico standard: Fx positiva a poppa (y negativo rispetto a pivot) genera momento negativo (orario).
+    # Verifichiamo: Spinta a dritta a poppa -> Nave gira a sinistra (Heading diminuisce).
+    # Quindi il momento matematico deve essere positivo (perché heading nautico 0->359).
+    # Aspetta, Heading nautico aumenta verso destra (Clockwise).
+    # Spinta a dritta (X+) -> Rotazione a sinistra (Counter-Clockwise) -> Heading Diminuisce.
+    # Quindi Torque deve essere NEGATIVO rispetto all'heading nautico?
+    # No, usiamo la convenzione standard: Heading 0.
+    # Spinta X+ a poppa. Poppa va a destra. Prua va a sinistra. Heading diventa 359, 358...
+    # Quindi Rate of Turn (ROT) deve essere negativo.
+    
+    M_lever = -F_total_x * lever_arm
+    
+    # Momento Totale
+    M_total = M_pure_B + M_lever
+
+    # Inerzia e Masse (Taratura Sensoriale)
+    VIRTUAL_MASS_X = MASS * 2.0  # Pesante di lato
+    VIRTUAL_MASS_Y = MASS * 1.2  # Più leggero avanti
+    VIRTUAL_INERTIA = 70000000.0 * 1.5
+    
+    # Smorzamento (Damping)
+    DAMP_X = 80000.0
+    DAMP_Y = 25000.0
+    DAMP_N = 60000000.0
+    
+    # Stato Iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u, v, r = 0.0, 0.0, 0.0 # Velocità surge (Y), sway (X), yaw rate (Rotazione)
-
-    # Parametri "Sensoriali" (Tarati per simulare 700t in acqua)
-    # Massa virtuale aumentata per simulare l'inerzia dell'acqua trascinata
-    VIRTUAL_MASS_Y = MASS * 1.2   # Avanzare è "più facile"
-    VIRTUAL_MASS_X = MASS * 2.5   # Spostarsi di lato è "molto pesante"
-    VIRTUAL_INERTIA = 70000000.0 * 2.0 # Inerzia rotazionale alta
+    u, v, r = 0.0, 0.0, 0.0
     
-    # Smorzamento (Freno idrodinamico)
-    # Valori alti impediscono al rimorchiatore di partire a razzo
-    DAMPING_SURGE = 25000.0     # Freno avanzamento
-    DAMPING_SWAY = 90000.0      # Freno laterale (alto per simulare lo Skeg che resiste)
-    DAMPING_YAW = 60000000.0    # Freno rotazione
-    
-    # Conversione Forze Input
-    # f_res_local[1] è la componente Y (Longitudinale)
-    # f_res_local[0] è la componente X (Laterale)
-    Fx_input = f_res_local[0] * 1000 * 9.81
-    Fy_input = f_res_local[1] * 1000 * 9.81
-    Mz_input = m_ton_m * 1000 * 9.81
-
     results = []
     
     for i in range(n_total_steps):
-        # 1. Calcolo Forze Smorzanti (Resistenza)
-        # Più vai veloce, più l'acqua ti frena (linear + quadratic approximation)
-        Fx_drag = -(DAMPING_SWAY * u + 2000.0 * u * abs(u))
-        Fy_drag = -(DAMPING_SURGE * v + 1000.0 * v * abs(v))
-        Mz_drag = -(DAMPING_YAW * r + 10000000.0 * r * abs(r))
+        # Forze Resistenti
+        Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
+        Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
+        Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
-        # 2. Equazioni del Moto (F = ma -> a = F/m)
-        du = (Fx_input + Fx_drag) / VIRTUAL_MASS_X
-        dv = (Fy_input + Fy_drag) / VIRTUAL_MASS_Y
-        dr = (Mz_input + Mz_drag) / VIRTUAL_INERTIA
+        # Accelerazioni
+        du = (F_total_x + Fx_res) / VIRTUAL_MASS_X
+        dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
+        dr = (M_total + Mn_res) / VIRTUAL_INERTIA
         
-        # 3. Aggiornamento Velocità
-        u += du * dt # Velocità Laterale (Sway)
-        v += dv * dt # Velocità Longitudinale (Surge)
-        r += dr * dt # Velocità Rotazione (Yaw rate)
+        u += du * dt
+        v += dv * dt
+        r += dr * dt
         
-        # 4. Aggiornamento Posizione (Nel mondo)
-        rad_h = np.radians(heading_deg)
-        c, s = np.cos(rad_h), np.sin(rad_h)
+        # Integrazione Posizione
+        rad = np.radians(heading_deg)
+        c, s = np.cos(rad), np.sin(rad)
         
-        # Proiettiamo le velocità locali (u,v) nel sistema mondo (dx, dy)
-        # Nota: v è l'asse Y nave (prua), u è l'asse X nave (destra)
-        dx_world = u * c + v * s  # Errore comune: qui v è forward (Y), u è side (X)
-                                  # Correggiamo rotazione standard:
-                                  # X mondo = X_local * cos - Y_local * sin ? No.
-                                  # Se heading è 0 (Nord/Alto):
-                                  # v (Surge) -> muove su Y mondo
-                                  # u (Sway) -> muove su X mondo
+        # Velocità mondo
+        # v (Surge) è lungo l'asse della nave. u (Sway) è laterale.
+        # dx = v * sin(h) + u * cos(h) ... (Attenzione coordinate nautiche)
+        # Heading 0 (Nord/Alto) -> v su Y, u su X.
+        dx_w = u * np.cos(rad) + v * np.sin(rad)
+        dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
-        # Rotazione vettoriale standard:
-        # X_w = u * cos(h) - v * sin(h)  <-- Attenzione al sistema di riferimento grafico
-        # Y_w = u * sin(h) + v * cos(h)
-        
-        # Nel nostro grafico Y è in alto (Prua) e Heading 0 è Nord.
-        # u (Sway, laterale destra)
-        # v (Surge, avanti)
-        
-        dx_world = u * np.cos(rad_h) + v * np.sin(rad_h) # Componente X
-        dy_world = -u * np.sin(rad_h) + v * np.cos(rad_h) # Componente Y
-        
-        x += dx_world * dt
-        y += dy_world * dt
-        heading_deg -= np.degrees(r * dt) # Meno perché rotazione oraria è positiva nei grafici nautici
+        x += dx_w * dt
+        y += dy_w * dt
+        heading_deg -= np.degrees(r * dt) # Meno per convenzione nautica vs matematica
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
