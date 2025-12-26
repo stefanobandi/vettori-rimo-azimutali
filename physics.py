@@ -85,7 +85,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA FISICA "A-B Model" (Corretta) ---
+# --- NUOVA LOGICA FISICA "A-B Model" con Effetto Skeg ---
 # Punto A (Pivot): Definito dall'utente (st.session_state.pp_y)
 # Punto B (Poppa): Punto medio propulsori (y = -12.0)
 
@@ -98,36 +98,32 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     point_B_y = POS_THRUSTERS_Y # -12.0
     point_A_y = pp_y            # 5.30 default
     
-    # Calcolo Braccio di Leva (Distanza A-B) (~17.3m positivi)
+    # Braccio di Leva
     lever_arm = point_A_y - point_B_y 
     
-    # 1. Calcolo Forza Totale X e Y (Applicate al Punto B - Poppa)
+    # 1. Calcolo Forza Totale X e Y
     F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
     F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
     
-    # 2. Calcolo Momenti (Torque)
-    # Momento 1: "Coppia Pura" (Rotazione su B)
+    # 2. Calcolo Momenti
     center_B = np.array([0.0, point_B_y])
     r_sx = pos_sx - center_B 
     r_dx = pos_dx - center_B
     
+    # Momento Puro su B
     M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
                (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
                
-    # Momento 2: "Effetto Leva Laterale" (CORRETTO)
-    # Spinta Poppa a Destra (+Fx) -> Prua ruota a Sinistra (CCW, Momento +)
-    # Quindi segno positivo.
+    # Momento da Leva
     M_lever = F_total_x * lever_arm
-    
-    # Momento Totale
     M_total = M_pure_B + M_lever
 
-    # Inerzia e Masse (Taratura Sensoriale)
-    VIRTUAL_MASS_X = MASS * 2.0  # Pesante di lato
-    VIRTUAL_MASS_Y = MASS * 1.2  # Più leggero avanti
+    # Inerzia e Masse
+    VIRTUAL_MASS_X = MASS * 2.0
+    VIRTUAL_MASS_Y = MASS * 1.2
     VIRTUAL_INERTIA = 70000000.0 * 1.5
     
-    # Smorzamento (Damping)
+    # Smorzamento
     DAMP_X = 80000.0
     DAMP_Y = 25000.0
     DAMP_N = 60000000.0
@@ -139,13 +135,20 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     results = []
     
     for i in range(n_total_steps):
-        # Forze Resistenti
+        # Calcolo Resistenza
         Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
         Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
         Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
+        # --- EFFETTO SKEG (Cruciale per pivot su B) ---
+        # Quando la nave ruota (r), lo skeg a prua resiste. 
+        # Questo crea una forza laterale che sposta il pivot indietro.
+        # Tarato per far coincidere il pivot con B nelle rotazioni pure (0/180)
+        # 950000.0 è circa 12 * DAMP_X, che serve per annullare la velocità tangenziale in B
+        Fx_skeg_lift = r * 950000.0 
+        
         # Accelerazioni
-        du = (F_total_x + Fx_res) / VIRTUAL_MASS_X
+        du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
         dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
         dr = (M_total + Mn_res) / VIRTUAL_INERTIA
         
@@ -155,17 +158,12 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         
         # Integrazione Posizione
         rad = np.radians(heading_deg)
-        c, s = np.cos(rad), np.sin(rad)
-        
         # Velocità mondo
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
-        
-        # Heading nautico (0=N, 90=E)
-        # r positivo (CCW) -> Heading diminuisce (va verso Ovest/350°)
         heading_deg -= np.degrees(r * dt)
         
         if i % record_every == 0:
