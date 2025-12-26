@@ -23,7 +23,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# MODIFICA: Aggiornato default pp_y da 5.42 a 5.30
 if "p1" not in st.session_state:
     st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.30})
 
@@ -32,14 +31,13 @@ def set_engine_state(p1, a1, p2, a2):
     st.session_state.p2, st.session_state.a2 = p2, a2
 
 def reset_engines(): set_engine_state(50, 0, 50, 0)
-# MODIFICA: Aggiornato reset pivot a 5.30
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Fisica:</b> Dual-Point Drag (Skeg Model)
+    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Fisica:</b> Simplified Captain's Logic
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -77,7 +75,7 @@ with st.sidebar:
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
-# Baricentro per calcolo momenti fisici puri (Nuova Fisica)
+# Baricentro per calcolo momenti fisici puri
 cg_pos = np.array([0.0, 0.0]) 
 
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
@@ -104,6 +102,8 @@ res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
 # Calcolo Momento rispetto al Baricentro (0,0) per la fisica
+# Nota: La forza laterale (u) genera momento in base alla distanza Y dal baricentro
+# Nota: La forza longitudinale (v) genera momento in base alla distanza X dal baricentro
 M_tm_CG = ((pos_sx-cg_pos)[0]*F_sx_eff[1] - (pos_sx-cg_pos)[1]*F_sx_eff[0] + 
            (pos_dx-cg_pos)[0]*F_dx_eff[1] - (pos_dx-cg_pos)[1]*F_dx_eff[0])
 M_knm = M_tm_CG * G_ACCEL
@@ -118,29 +118,23 @@ if inter is not None:
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 
 with col_l:
-    # MODIFICA: Aggiunto format="%d%%"
     st.slider("Potenza SX", 0, 100, key="p1", format="%d%%")
     st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    # MODIFICA: Aggiunto format="%03d°"
     st.slider("Azimuth SX", 0, 360, key="a1", format="%03d°")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
     
 with col_r:
-    # MODIFICA: Aggiunto format="%d%%"
     st.slider("Potenza DX", 0, 100, key="p2", format="%d%%")
     st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    # MODIFICA: Aggiunto format="%03d°"
     st.slider("Azimuth DX", 0, 360, key="a2", format="%03d°")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
     with st.expander("📍 Target Pivot Point (Visual & Auto)", expanded=True):
         pcol1, pcol2 = st.columns(2)
-        # MODIFICA: Aggiunto format="%.2fm"
         pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
         pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x", format="%.2fm")
     
-    # Avvisi di interferenza scia
     if wash_dx_hits_sx:
         st.error("⚠️ ATTENZIONE: Flusso DX investe SX -> Perdita 20% spinta SX")
     if wash_sx_hits_dx:
@@ -148,8 +142,9 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
+    # Calcolo Traiettoria
+    traj = []
     if show_prediction:
-        # Passiamo il momento rispetto al Baricentro (M_tm_CG) e NON passiamo più pp_x/pp_y
         traj = predict_trajectory(np.array([res_u, res_v]), M_tm_CG, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
@@ -164,6 +159,7 @@ with col_c:
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
     
+    # Costruzione vettoriale
     origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
     sc = 0.7
     
@@ -191,15 +187,33 @@ with col_c:
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Target PP")
     
     if abs(M_tm_CG) > 1:
-        # Usiamo M_tm_CG per visualizzare la tendenza di rotazione reale
         p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    ax.set_xlim(-30, 30); ax.set_ylim(-40, 35); ax.set_aspect('equal'); ax.axis('off')
+    # --- GESTIONE ZOOM DINAMICO ---
+    if show_prediction and len(traj) > 0:
+        # Estraiamo coordinate min e max dalla traiettoria
+        all_x = [p[0] for p in traj] + [-15, 15] # includiamo lo scafo base
+        all_y = [p[1] for p in traj] + [-20, 20]
+        
+        min_x, max_x = min(all_x), max(all_x)
+        min_y, max_y = min(all_y), max(all_y)
+        
+        # Aggiungiamo margine
+        margin = 10.0
+        ax.set_xlim(min_x - margin, max_x + margin)
+        ax.set_ylim(min_y - margin, max_y + margin)
+    else:
+        # Zoom standard fisso
+        ax.set_xlim(-30, 30)
+        ax.set_ylim(-40, 35)
+        
+    ax.set_aspect('equal')
+    ax.axis('off')
     st.pyplot(fig)
     
     if show_prediction:
-        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Traiettoria stimata 30s (Dual-Point Skeg Physics)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: 30s (Metodo 'Captain's Feel')</p>", unsafe_allow_html=True)
 
 # --- TABELLA RIEPILOGATIVA FINALE ---
 st.write("---")
@@ -215,7 +229,6 @@ with c_data3:
 with c_data4:
     st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
 
-# Tabella dettagliata stato motori
 df_engines = pd.DataFrame({
     "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
     "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
