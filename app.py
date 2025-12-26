@@ -23,15 +23,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# MODIFICA: Aggiornato default pp_y da 5.42 a 5.30
 if "p1" not in st.session_state:
-    st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.42})
+    st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.30})
 
 def set_engine_state(p1, a1, p2, a2):
     st.session_state.p1, st.session_state.a1 = p1, a1
     st.session_state.p2, st.session_state.a2 = p2, a2
 
 def reset_engines(): set_engine_state(50, 0, 50, 0)
-def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.42
+# MODIFICA: Aggiornato reset pivot a 5.30
+def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
@@ -116,22 +118,27 @@ if inter is not None:
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 
 with col_l:
-    st.slider("Potenza SX", 0, 100, key="p1")
+    # MODIFICA: Aggiunto format="%d%%"
+    st.slider("Potenza SX", 0, 100, key="p1", format="%d%%")
     st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    st.slider("Azimuth SX", 0, 360, key="a1")
+    # MODIFICA: Aggiunto format="%03d°"
+    st.slider("Azimuth SX", 0, 360, key="a1", format="%03d°")
     st.pyplot(plot_clock(st.session_state.a1, 'red'))
     
 with col_r:
-    st.slider("Potenza DX", 0, 100, key="p2")
+    # MODIFICA: Aggiunto format="%d%%"
+    st.slider("Potenza DX", 0, 100, key="p2", format="%d%%")
     st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    st.slider("Azimuth DX", 0, 360, key="a2")
+    # MODIFICA: Aggiunto format="%03d°"
+    st.slider("Azimuth DX", 0, 360, key="a2", format="%03d°")
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
     with st.expander("📍 Target Pivot Point (Visual & Auto)", expanded=True):
         pcol1, pcol2 = st.columns(2)
-        pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y")
-        pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x")
+        # MODIFICA: Aggiunto format="%.2fm"
+        pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
+        pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x", format="%.2fm")
     
     # Avvisi di interferenza scia
     if wash_dx_hits_sx:
