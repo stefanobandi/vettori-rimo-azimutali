@@ -85,120 +85,86 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA CINEMATICA "STERN-DRIVE" (V7.0) ---
-# Concetto:
-# 1. B (Poppa) si muove come un punto materiale spinto dalle forze X e Y.
-# 2. A (Pivot) ruota attorno a B spinto dal Momento.
-# 3. La posizione finale della nave è ricostruita partendo da B e dall'Heading.
+# --- FISICA ORIGINALE V6.0 (Ripristinata) ---
+# Questa logica usa Newton (F=ma) + Correzione Skeg.
+# È la più stabile per simulare un corpo rigido in acqua.
 
-def rotate_vec(vec, angle_deg):
-    """Ruota un vettore 2D di un certo angolo."""
-    rad = np.radians(angle_deg)
-    c, s = np.cos(rad), np.sin(rad)
-    return np.array([vec[0]*c - vec[1]*s, vec[0]*s + vec[1]*c])
-
-def predict_trajectory(F_sx, F_dx, pos_sx_local, pos_dx_local, pp_y, total_time=30.0, steps=20):
+def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
-    n_steps = int(total_time / dt)
-    record_every = max(1, n_steps // steps)
+    n_total_steps = int(total_time / dt)
+    record_every = max(1, n_total_steps // steps)
     
-    # OFFSET GEOMETRICI (Costanti Locali)
-    # B è a y = -12.0
-    # Centro Nave è a y = 0.0
-    # Distanza Centro -> B = 12.0m (B è "indietro")
-    OFFSET_CENTER_FROM_B = np.array([0.0, 12.0]) 
+    # Parametri Modello
+    point_B_y = POS_THRUSTERS_Y # -12.0
+    point_A_y = pp_y            # 5.30 default (o variabile)
     
-    # Inizializzazione Stato Mondo
-    # Partiamo con la nave a (0,0) con Heading 0.
-    # Quindi B si trova a (0, -12) nel mondo.
-    pos_B_world = np.array([0.0, -12.0])
-    heading_deg = 0.0
+    # Braccio di Leva
+    lever_arm = point_A_y - point_B_y 
     
-    # Velocità (Accumulatori)
-    v_surge_B = 0.0  # Velocità avanti/indietro di B
-    v_sway_B = 0.0   # Velocità laterale di B
-    v_rot = 0.0      # Velocità rotazione nave (Attorno a B)
+    # 1. Calcolo Forza Totale X e Y
+    F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
+    F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
+    
+    # 2. Calcolo Momenti
+    center_B = np.array([0.0, point_B_y])
+    r_sx = pos_sx - center_B 
+    r_dx = pos_dx - center_B
+    
+    # Momento Puro su B (Coppia dei motori)
+    M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
+               (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
+               
+    # Momento da Leva (Steering effect)
+    M_lever = F_total_x * lever_arm
+    M_total = M_pure_B + M_lever
+
+    # Inerzia e Masse Virtuali (Per simulare 700t)
+    VIRTUAL_MASS_X = MASS * 2.0
+    VIRTUAL_MASS_Y = MASS * 1.2
+    VIRTUAL_INERTIA = 70000000.0 * 1.5
+    
+    # Smorzamento (Resistenza idrodinamica)
+    DAMP_X = 80000.0
+    DAMP_Y = 25000.0
+    DAMP_N = 60000000.0
+    
+    # Stato Iniziale
+    x, y, heading_deg = 0.0, 0.0, 0.0
+    u, v, r = 0.0, 0.0, 0.0
     
     results = []
     
-    # --- PARAMETRI FISICI ---
-    # Masse e Inerzie (Sufficientemente alte per dare "peso")
-    M_SURGE = 800.0   
-    M_SWAY = 1500.0   # Più difficile spostare di lato
-    I_ROT = 60000.0   
-    
-    # Smorzamento (Drag) - Simula l'acqua che frena
-    DRAG_SURGE = 0.03
-    DRAG_SWAY = 0.08  # Frena molto lateralmente (Skeg effect implicito)
-    DRAG_ROT = 0.05
-    
-    for i in range(n_steps):
-        # 1. CALCOLO FORZE E MOMENTI (Input)
+    for i in range(n_total_steps):
+        # Calcolo Resistenza (Proporzionale alla velocità)
+        Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
+        Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
+        Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
-        # Forze su B (Poppa)
-        # Surge: Somma componenti Y
-        F_surge_tot = (F_sx[1] + F_dx[1]) * 1000 * 9.81
-        # Sway: Somma componenti X (Queste spostano B lateralmente)
-        F_sway_tot = (F_sx[0] + F_dx[0]) * 1000 * 9.81
+        # --- EFFETTO SKEG (Il segreto della stabilità) ---
+        # Quando la nave ruota (r), lo skeg a prua resiste lateralmente.
+        # Questo crea una forza che si oppone allo scarroccio della poppa durante la rotazione.
+        Fx_skeg_lift = r * 950000.0 
         
-        # Momento Torcente (Che fa ruotare A attorno a B)
-        # Usiamo il Pivot Point A come riferimento per la leva "percepita".
-        # Leva = Distanza tra A (pp_y) e B (-12.0).
-        dist_AB = pp_y - (-12.0)
+        # Accelerazioni (F = ma)
+        du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
+        dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
+        dr = (M_total + Mn_res) / VIRTUAL_INERTIA
         
-        # Il Momento è generato da:
-        # a) Spinta differenziale (Motori uno avanti uno indietro)
-        #    Cross product tra posizione motore locale (rispetto a B) e forza
-        #    Motore SX è a (-2.7, 0) rispetto a B. DX a (+2.7, 0).
-        #    M_diff = r_sx X F_sx + r_dx X F_dx
-        #    (In 2D: r_x * F_y - r_y * F_x)
-        m_diff = (-2.7 * F_sx[1] - 0 * F_sx[0]) + (2.7 * F_dx[1] - 0 * F_dx[0])
-        m_diff *= 1000 * 9.81
+        u += du * dt
+        v += dv * dt
+        r += dr * dt
         
-        # b) Momento generato dalla forza laterale totale (Sway) che fa leva sul pivot A?
-        #    L'utente dice: "Spinta laterale X a poppa genera momento facendo leva su A"
-        #    Se spingo a destra a poppa, e A è il perno, la nave ruota in senso antiorario.
-        #    M_lat = F_sway_tot * dist_AB
-        #    Segno: F_sway positiva (dx) -> Rotazione antioraria (positiva).
-        #    Nota: Questo è il termine "Steering".
-        m_steer = F_sway_tot * dist_AB
+        # Integrazione Posizione
+        rad = np.radians(heading_deg)
+        # Velocità rispetto al mondo
+        dx_w = u * np.cos(rad) + v * np.sin(rad)
+        dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
-        M_total = m_diff + m_steer
-        
-        # 2. DINAMICA (Aggiornamento Velocità con Inerzia)
-        acc_surge = F_surge_tot / M_SURGE
-        acc_sway = F_sway_tot / M_SWAY
-        acc_rot = M_total / I_ROT
-        
-        v_surge_B += acc_surge * dt
-        v_sway_B += acc_sway * dt
-        v_rot += acc_rot * dt
-        
-        # Applicazione Drag
-        v_surge_B *= (1.0 - DRAG_SURGE)
-        v_sway_B *= (1.0 - DRAG_SWAY)
-        v_rot *= (1.0 - DRAG_ROT)
-        
-        # 3. CINEMATICA (Aggiornamento Posizione)
-        
-        # A. Muoviamo B (Poppa) nel mondo
-        # Ruotiamo il vettore velocità locale (surge, sway) nell'orientamento attuale
-        d_pos_B_local = np.array([v_sway_B, v_surge_B]) * dt
-        d_pos_B_world = rotate_vec(d_pos_B_local, -heading_deg) # -heading per rotazione matematica std
-        
-        pos_B_world += d_pos_B_world
-        
-        # B. Ruotiamo la nave (Cambia heading)
-        d_theta = np.degrees(v_rot * dt)
-        heading_deg -= d_theta
-        
-        # C. Ricostruiamo il Centro della Nave per il plotting
-        # Il centro è sempre a una distanza fissa e angolo fisso rispetto a B.
-        # Vector B -> Center è (0, 12.0) locale.
-        vec_B_to_Center_world = rotate_vec(OFFSET_CENTER_FROM_B, -heading_deg)
-        pos_Center_world = pos_B_world + vec_B_to_Center_world
+        x += dx_w * dt
+        y += dy_w * dt
+        heading_deg -= np.degrees(r * dt)
         
         if i % record_every == 0:
-            results.append((pos_Center_world[0], pos_Center_world[1], heading_deg))
+            results.append((x, y, heading_deg))
             
     return results
