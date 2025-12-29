@@ -154,48 +154,93 @@ with col_c:
         
     draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
     draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
-
-    # --- VISUALIZZAZIONE E ZOOM DINAMICO "SQUARE BOX" ---
-    ax.set_aspect('equal')
     
-    # 1. Raccolta punti d'interesse per il bounding box
-    all_x = [-10, 10] # Larghezza minima di base
-    all_y = [-20, 20] # Altezza minima di base
+    origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
+    sc = 0.7
     
-    # Aggiungi posizioni scafo statico
-    all_x.extend([pos_sx[0], pos_dx[0]])
-    all_y.extend([pos_sx[1], pos_dx[1]])
+    if not show_construction:
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
+    else:
+        if inter is not None:
+            v_sx_len = np.linalg.norm(F_sx_eff)*sc; v_dx_len = np.linalg.norm(F_dx_eff)*sc
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.08, head_width=min(0.3, v_sx_len*0.4), head_length=min(0.4, v_sx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.08, head_width=min(0.3, v_dx_len*0.4), head_length=min(0.4, v_dx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
+            pSX_tip = inter + F_sx_eff*sc; pDX_tip = inter + F_dx_eff*sc; pRES_tip = inter + np.array([res_u, res_v])*sc
+            ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4); ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
+            
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
     
-    # Aggiungi punti della predizione se attiva
+    if res_ton > 0.1:
+        v_res_len = res_ton * sc
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
+    
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Target PP")
+    
+    if abs(M_tm_CG) > 1:
+        p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
+        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
+    
+    # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
     if show_prediction and len(traj) > 0:
-        path_x = [t[0] for t in traj]
-        path_y = [t[1] for t in traj]
-        all_x.extend(path_x)
-        all_y.extend(path_y)
-    
-    # 2. Calcolo Box
-    min_x, max_x = min(all_x), max(all_x)
-    min_y, max_y = min(all_y), max(all_y)
-    
-    center_x = (min_x + max_x) / 2
-    center_y = (min_y + max_y) / 2
-    
-    width = max_x - min_x
-    height = max_y - min_y
-    
-    # 3. Logica "Square Box"
-    # Trova la dimensione maggiore e aggiungi un margine
-    max_dim = max(width, height)
-    margin = max_dim * 0.15 # 15% di margine
-    span = (max_dim / 2) + margin
-    
-    # Imposta limiti centrati e quadrati
-    ax.set_xlim(center_x - span, center_x + span)
-    ax.set_ylim(center_y - span, center_y + span)
-    
-    # Griglia e assi
-    ax.grid(True, linestyle=':', alpha=0.6)
-    ax.set_axisbelow(True)
-    
-    # Rendering finale
+        # Punti dello scafo statico
+        base_x = [-15, 15]
+        base_y = [-25, 20]
+        # Punti della traiettoria
+        traj_x = [p[0] for p in traj]
+        traj_y = [p[1] for p in traj]
+        
+        all_x = base_x + traj_x
+        all_y = base_y + traj_y
+        
+        min_x, max_x = min(all_x), max(all_x)
+        min_y, max_y = min(all_y), max(all_y)
+        
+        # Calcoliamo il centro del bounding box
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        
+        # Calcoliamo la dimensione massima (Span)
+        span_x = max_x - min_x
+        span_y = max_y - min_y
+        max_span = max(span_x, span_y) * 1.1 # +10% margine
+        
+        # Impostiamo i limiti centrati, creando un box quadrato
+        # Questo fa sì che se il box si ingrandisce, la nave "rimpicciolisce"
+        ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
+        ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
+    else:
+        # Default view
+        ax.set_xlim(-30, 30)
+        ax.set_ylim(-40, 35)
+        
+    ax.set_aspect('equal')
+    ax.axis('off')
     st.pyplot(fig)
+    
+    if show_prediction:
+        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
+
+# --- TABELLA RIEPILOGATIVA FINALE ---
+st.write("---")
+st.subheader("📋 Telemetria di Manovra")
+
+c_data1, c_data2, c_data3, c_data4 = st.columns(4)
+with c_data1:
+    st.metric("Spinta Risultante", f"{res_ton:.1f} t")
+with c_data2:
+    st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
+with c_data3:
+    st.metric("Momento (CG)", f"{int(M_tm_CG)} t*m", delta_color="off")
+with c_data4:
+    st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+
+df_engines = pd.DataFrame({
+    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
+    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
+    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
+})
+st.table(df_engines)
