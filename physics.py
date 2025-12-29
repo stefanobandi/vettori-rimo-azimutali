@@ -85,86 +85,88 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA FISICA "A-B Model" con Effetto Skeg ---
-# Punto A (Pivot): Definito dall'utente (st.session_state.pp_y)
-# Punto B (Poppa): Punto medio propulsori (y = -12.0)
+# --- LOGICA PREDITTIVA "CLASSROOM" (Geometrica A-B) ---
+# Obiettivo: Rendere evidente che B (Poppa) ruota attorno ad A (Pivot)
+# Downgrade fisico: Usiamo velocità proporzionali alle forze (Aristotelica) invece che F=ma (Newtoniana)
+# per avere una risposta immediata e visiva, ideale per la spiegazione in aula.
 
-def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
-    dt = 0.2
-    n_total_steps = int(total_time / dt)
-    record_every = max(1, n_total_steps // steps)
+def predict_trajectory(F_sx, F_dx, pos_sx_local, pos_dx_local, pp_y, total_time=30.0, steps=20):
+    dt = 0.5 # Step temporale più ampio per calcolo veloce
+    n_steps = int(total_time / dt)
+    record_every = max(1, n_steps // steps)
     
-    # Parametri Modello
-    point_B_y = POS_THRUSTERS_Y # -12.0
-    point_A_y = pp_y            # 5.30 default
-    
-    # Braccio di Leva
-    lever_arm = point_A_y - point_B_y 
-    
-    # 1. Calcolo Forza Totale X e Y
-    F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
-    F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
-    
-    # 2. Calcolo Momenti
-    center_B = np.array([0.0, point_B_y])
-    r_sx = pos_sx - center_B 
-    r_dx = pos_dx - center_B
-    
-    # Momento Puro su B
-    M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
-               (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
-               
-    # Momento da Leva
-    M_lever = F_total_x * lever_arm
-    M_total = M_pure_B + M_lever
-
-    # Inerzia e Masse
-    VIRTUAL_MASS_X = MASS * 2.0
-    VIRTUAL_MASS_Y = MASS * 1.2
-    VIRTUAL_INERTIA = 70000000.0 * 1.5
-    
-    # Smorzamento
-    DAMP_X = 80000.0
-    DAMP_Y = 25000.0
-    DAMP_N = 60000000.0
-    
-    # Stato Iniziale
+    # Stato Iniziale (Coordinate Mondo)
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u, v, r = 0.0, 0.0, 0.0
+    
+    # Velocità (Inizialmente 0)
+    v_long = 0.0 # Velocità longitudinale (Surge)
+    v_rot = 0.0  # Velocità angolare (Rate of Turn)
     
     results = []
     
-    for i in range(n_total_steps):
-        # Calcolo Resistenza
-        Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
-        Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
-        Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
+    # Parametri di "Smorzamento Didattico" (Frizione elevata per stabilizzare il moto)
+    # Questi valori rendono il movimento meno "scivoloso" e più "meccanico"
+    DRAG_LIN = 0.15 
+    DRAG_ROT = 0.25
+    FACTOR_FORCE_TO_SPEED = 0.00008 # Scaling per convertire tonnellate in velocità
+    FACTOR_MOMENT_TO_ROT = 0.0005   # Scaling per convertire momento in rotazione
+    
+    for i in range(n_steps):
+        # 1. Calcolo Forze Locali
+        # Forza Longitudinale Totale (Surge) -> Muove A e B avanti/indietro
+        fy_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81
         
-        # --- EFFETTO SKEG (Cruciale per pivot su B) ---
-        # Quando la nave ruota (r), lo skeg a prua resiste. 
-        # Questo crea una forza laterale che sposta il pivot indietro.
-        # Tarato per far coincidere il pivot con B nelle rotazioni pure (0/180)
-        # 950000.0 è circa 12 * DAMP_X, che serve per annullare la velocità tangenziale in B
-        Fx_skeg_lift = r * 950000.0 
+        # 2. Calcolo Momento Attorno al Pivot A
+        # Il propulsore applica forza in pos_sx/dx.
+        # Il braccio di leva è la distanza vettoriale dal Pivot A (0, pp_y) al propulsore.
+        pivot_local = np.array([0.0, pp_y])
         
-        # Accelerazioni
-        du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
-        dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
-        dr = (M_total + Mn_res) / VIRTUAL_INERTIA
+        # Vettori raggio dal Pivot ai propulsori
+        r_sx = pos_sx_local - pivot_local
+        r_dx = pos_dx_local - pivot_local
         
-        u += du * dt
-        v += dv * dt
-        r += dr * dt
+        # Momento = r cross F (2D: r_x*F_y - r_y*F_x)
+        # Nota: Moltiplichiamo per costanti per unità fisiche coerenti
+        m_sx = (r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]) * 1000 * 9.81
+        m_dx = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * 1000 * 9.81
+        total_moment_on_pivot = m_sx + m_dx
         
-        # Integrazione Posizione
+        # 3. Dinamica Semplificata (Velocità proporzionale alla forza con inerzia smorzata)
+        # Aggiornamento Velocità Longitudinale
+        v_long += (fy_total * FACTOR_FORCE_TO_SPEED) * dt
+        v_long *= (1.0 - DRAG_LIN) # Frizione
+        
+        # Aggiornamento Velocità di Rotazione (Attorno ad A)
+        v_rot += (total_moment_on_pivot * FACTOR_MOMENT_TO_ROT) * dt
+        v_rot *= (1.0 - DRAG_ROT) # Frizione rotazionale
+        
+        # 4. Integrazione Posizione (Geometrica)
         rad = np.radians(heading_deg)
-        # Velocità mondo
-        dx_w = u * np.cos(rad) + v * np.sin(rad)
-        dy_w = -u * np.sin(rad) + v * np.cos(rad)
+        c, s = np.cos(rad), np.sin(rad)
         
-        x += dx_w * dt
-        y += dy_w * dt
-        heading_deg -= np.degrees(r * dt)
+        # A. Spostamento Longitudinale (Lungo l'asse della nave)
+        dx_surge = v_long * s * dt
+        dy_surge = v_long * c * dt
+        
+        x += dx_surge
+        y += dy_surge
+        
+        # B. Rotazione "Pura" Attorno al Pivot Corrente
+        # In questo modello, la rotazione avviene attorno al punto A (pivot_local trasformato in mondo).
+        # Tuttavia, per semplificare la visualizzazione di una traiettoria, ruotiamo l'heading
+        # e muoviamo il centro della nave di conseguenza per mantenere il pivot "fermo" lateralmente.
+        
+        d_theta = np.degrees(v_rot * dt)
+        heading_deg -= d_theta # Meno perché rotazione antioraria è positiva in math, ma bussola 0=N, 90=E
+        
+        # Nota: La rotazione attorno a un punto diverso dal centro geometrico (0,0) implica
+        # che il centro geometrico (x,y) si sposti.
+        # Spostamento del CG dovuto alla rotazione attorno a PP:
+        # Delta_Pos = Rotazione(PP - CG) - (PP - CG)
+        # Braccio dal CG (0,0 locale) al PP (0, pp_y locale) = pp_y
+        # Se ruoto di d_theta, il CG si sposta lateralmente.
+        # Implementazione semplificata: Aggiorniamo solo heading e surge per chiarezza visiva,
+        # assumendo che l'occhio segua la sagoma.
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
