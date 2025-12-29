@@ -49,7 +49,8 @@ with st.sidebar:
     c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
+    # MODIFICA QUI: Aggiunta etichetta BETA
+    show_prediction = st.checkbox("Predizione Movimento (30s) (BETA - IN SVILUPPO)", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -140,7 +141,7 @@ with col_c:
     # --- PREDIZIONE CON NUOVA LOGICA A-B ---
     traj = []
     if show_prediction:
-        # Passiamo le forze singole e le posizioni per calcolare le leve A-B internamente
+        # Passiamo le forze singole (vettori), le posizioni locali dei propulsori e la Y del Pivot
         traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
@@ -186,10 +187,8 @@ with col_c:
     
     # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
     if show_prediction and len(traj) > 0:
-        # Punti dello scafo statico
         base_x = [-15, 15]
         base_y = [-25, 20]
-        # Punti della traiettoria
         traj_x = [p[0] for p in traj]
         traj_y = [p[1] for p in traj]
         
@@ -199,21 +198,16 @@ with col_c:
         min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
         
-        # Calcoliamo il centro del bounding box
         center_x = (min_x + max_x) / 2
         center_y = (min_y + max_y) / 2
         
-        # Calcoliamo la dimensione massima (Span)
         span_x = max_x - min_x
         span_y = max_y - min_y
-        max_span = max(span_x, span_y) * 1.1 # +10% margine
+        max_span = max(span_x, span_y) * 1.1 
         
-        # Impostiamo i limiti centrati, creando un box quadrato
-        # Questo fa sì che se il box si ingrandisce, la nave "rimpicciolisce"
         ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
         ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
     else:
-        # Default view
         ax.set_xlim(-30, 30)
         ax.set_ylim(-40, 35)
         
