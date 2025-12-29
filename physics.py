@@ -85,8 +85,8 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V7.1 (Tuned for Captain's Feel) ---
-# Newton (F=ma) + Enhanced Skeg Correction per rotazioni stabili.
+# --- FISICA V7.2 ("SUPER SKEG") ---
+# Parametri estremi per forzare il "Pivoting" e annullare il drift laterale.
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
@@ -113,18 +113,18 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
                (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
                
-    # Momento da Leva (Steering effect)
+    # Momento da Leva
     M_lever = F_total_x * lever_arm
     M_total = M_pure_B + M_lever
 
-    # --- TUNING FISICA (V7.1) ---
-    # Aumentata Massa Virtuale Laterale (X) per ridurre drift laterale
-    VIRTUAL_MASS_X = MASS * 3.5  # Era 2.0
+    # --- PARAMETRI "SUPER SKEG" ---
+    # Inerzia enorme sull'asse laterale per rallentare l'inizio della derapata
+    VIRTUAL_MASS_X = MASS * 5.0
     VIRTUAL_MASS_Y = MASS * 1.2
-    VIRTUAL_INERTIA = 70000000.0 * 1.5
+    VIRTUAL_INERTIA = 70000000.0 * 1.2
     
-    # Aumentato Smorzamento Laterale (X) per rendere difficile lo scarroccio puro
-    DAMP_X = 200000.0  # Era 80000.0
+    # Smorzamento laterale brutale: simula una parete d'acqua contro la fiancata
+    DAMP_X = 500000.0  
     DAMP_Y = 25000.0
     DAMP_N = 60000000.0
     
@@ -140,10 +140,10 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
         Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
-        # --- EFFETTO SKEG BOOSTED ---
-        # Aumentato drasticamente il coefficiente (da 950k a 3.5M).
-        # Se la nave ruota (r), genera una forza laterale opposta enorme che blocca la derapata.
-        Fx_skeg_lift = r * 3500000.0 
+        # --- EFFETTO SKEG "IRON WALL" ---
+        # Coefficiente alzato a 15 Milioni. 
+        # Se c'è rotazione (r), genera una forza mostruosa che cancella F_total_x
+        Fx_skeg_lift = r * 15000000.0 
         
         # Accelerazioni
         du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
@@ -156,7 +156,6 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         
         # Integrazione Posizione
         rad = np.radians(heading_deg)
-        # Velocità rispetto al mondo
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
