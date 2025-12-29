@@ -85,93 +85,120 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- LOGICA PREDITTIVA GEOMETRICA CON INERZIA ---
+# --- NUOVA LOGICA CINEMATICA "STERN-DRIVE" (V7.0) ---
+# Concetto:
+# 1. B (Poppa) si muove come un punto materiale spinto dalle forze X e Y.
+# 2. A (Pivot) ruota attorno a B spinto dal Momento.
+# 3. La posizione finale della nave è ricostruita partendo da B e dall'Heading.
+
+def rotate_vec(vec, angle_deg):
+    """Ruota un vettore 2D di un certo angolo."""
+    rad = np.radians(angle_deg)
+    c, s = np.cos(rad), np.sin(rad)
+    return np.array([vec[0]*c - vec[1]*s, vec[0]*s + vec[1]*c])
+
 def predict_trajectory(F_sx, F_dx, pos_sx_local, pos_dx_local, pp_y, total_time=30.0, steps=20):
-    dt = 0.2  # Step temporale più fine per integrare meglio l'accelerazione
+    dt = 0.2
     n_steps = int(total_time / dt)
     record_every = max(1, n_steps // steps)
     
-    # Stato Iniziale
-    center_pos = np.array([0.0, 0.0])
+    # OFFSET GEOMETRICI (Costanti Locali)
+    # B è a y = -12.0
+    # Centro Nave è a y = 0.0
+    # Distanza Centro -> B = 12.0m (B è "indietro")
+    OFFSET_CENTER_FROM_B = np.array([0.0, 12.0]) 
+    
+    # Inizializzazione Stato Mondo
+    # Partiamo con la nave a (0,0) con Heading 0.
+    # Quindi B si trova a (0, -12) nel mondo.
+    pos_B_world = np.array([0.0, -12.0])
     heading_deg = 0.0
     
-    # Velocità accumulate (Inizialmente zero)
-    v_surge = 0.0 
-    v_sway = 0.0  
-    v_rot = 0.0   
+    # Velocità (Accumulatori)
+    v_surge_B = 0.0  # Velocità avanti/indietro di B
+    v_sway_B = 0.0   # Velocità laterale di B
+    v_rot = 0.0      # Velocità rotazione nave (Attorno a B)
     
     results = []
     
-    # --- COSTANTI FISICHE "CAPTAIN'S FEEL" ---
-    # Masse virtuali elevate per simulare il ritardo (Inerzia)
-    M_SURGE = 800.0   # Tonnellate virtuali longitudinali
-    M_SWAY = 1500.0   # Tonnellate virtuali laterali (più difficile spostare acqua di lato)
-    I_ROT = 60000.0   # Inerzia rotazionale
+    # --- PARAMETRI FISICI ---
+    # Masse e Inerzie (Sufficientemente alte per dare "peso")
+    M_SURGE = 800.0   
+    M_SWAY = 1500.0   # Più difficile spostare di lato
+    I_ROT = 60000.0   
     
-    # Resistenza dell'acqua (Drag) - Più basso è, più la nave mantiene l'abbrivio
-    DRAG_SURGE = 0.02 
-    DRAG_SWAY = 0.08  # Frena prima lateralmente
-    DRAG_ROT = 0.05   # Frena la rotazione gradualmente
-    
-    # Il Pivot Point è definito localmente sull'asse Y della nave
-    pivot_local_dist = pp_y 
+    # Smorzamento (Drag) - Simula l'acqua che frena
+    DRAG_SURGE = 0.03
+    DRAG_SWAY = 0.08  # Frena molto lateralmente (Skeg effect implicito)
+    DRAG_ROT = 0.05
     
     for i in range(n_steps):
-        # 1. Calcolo Forze (Newton)
-        f_y_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81  # Forza Longitudinale
-        f_x_total = (F_sx[0] + F_dx[0]) * 1000 * 9.81  # Forza Laterale
+        # 1. CALCOLO FORZE E MOMENTI (Input)
         
-        # 2. Calcolo Momento su Pivot A
-        r_sx = np.array([pos_sx_local[0], pos_sx_local[1] - pp_y])
-        r_dx = np.array([pos_dx_local[0], pos_dx_local[1] - pp_y])
+        # Forze su B (Poppa)
+        # Surge: Somma componenti Y
+        F_surge_tot = (F_sx[1] + F_dx[1]) * 1000 * 9.81
+        # Sway: Somma componenti X (Queste spostano B lateralmente)
+        F_sway_tot = (F_sx[0] + F_dx[0]) * 1000 * 9.81
         
-        m_sx = (r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]) * 1000 * 9.81
-        m_dx = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * 1000 * 9.81
-        total_moment = m_sx + m_dx
+        # Momento Torcente (Che fa ruotare A attorno a B)
+        # Usiamo il Pivot Point A come riferimento per la leva "percepita".
+        # Leva = Distanza tra A (pp_y) e B (-12.0).
+        dist_AB = pp_y - (-12.0)
         
-        # 3. ACCELERAZIONE (F = ma -> a = F/m)
-        acc_surge = f_y_total / M_SURGE
-        acc_sway = f_x_total / M_SWAY
-        acc_rot = total_moment / I_ROT
+        # Il Momento è generato da:
+        # a) Spinta differenziale (Motori uno avanti uno indietro)
+        #    Cross product tra posizione motore locale (rispetto a B) e forza
+        #    Motore SX è a (-2.7, 0) rispetto a B. DX a (+2.7, 0).
+        #    M_diff = r_sx X F_sx + r_dx X F_dx
+        #    (In 2D: r_x * F_y - r_y * F_x)
+        m_diff = (-2.7 * F_sx[1] - 0 * F_sx[0]) + (2.7 * F_dx[1] - 0 * F_dx[0])
+        m_diff *= 1000 * 9.81
         
-        # 4. INTEGRAZIONE VELOCITÀ (V = V0 + a*t) - Qui sta l'inerzia!
-        v_surge += acc_surge * dt
-        v_sway += acc_sway * dt
+        # b) Momento generato dalla forza laterale totale (Sway) che fa leva sul pivot A?
+        #    L'utente dice: "Spinta laterale X a poppa genera momento facendo leva su A"
+        #    Se spingo a destra a poppa, e A è il perno, la nave ruota in senso antiorario.
+        #    M_lat = F_sway_tot * dist_AB
+        #    Segno: F_sway positiva (dx) -> Rotazione antioraria (positiva).
+        #    Nota: Questo è il termine "Steering".
+        m_steer = F_sway_tot * dist_AB
+        
+        M_total = m_diff + m_steer
+        
+        # 2. DINAMICA (Aggiornamento Velocità con Inerzia)
+        acc_surge = F_surge_tot / M_SURGE
+        acc_sway = F_sway_tot / M_SWAY
+        acc_rot = M_total / I_ROT
+        
+        v_surge_B += acc_surge * dt
+        v_sway_B += acc_sway * dt
         v_rot += acc_rot * dt
         
-        # 5. APPLICAZIONE DRAG (Resistenza idrodinamica)
-        v_surge *= (1.0 - DRAG_SURGE)
-        v_sway *= (1.0 - DRAG_SWAY)
+        # Applicazione Drag
+        v_surge_B *= (1.0 - DRAG_SURGE)
+        v_sway_B *= (1.0 - DRAG_SWAY)
         v_rot *= (1.0 - DRAG_ROT)
         
-        # 6. Applicazione Movimento Geometrico (Pivot Logic)
+        # 3. CINEMATICA (Aggiornamento Posizione)
         
-        # A. Rotazione RIGIDA attorno al Pivot A
-        rad_h = np.radians(heading_deg)
-        # Posizione attuale del pivot nel mondo
-        to_pivot = np.array([-np.sin(rad_h), np.cos(rad_h)]) * pivot_local_dist
-        current_pivot_pos = center_pos + to_pivot
+        # A. Muoviamo B (Poppa) nel mondo
+        # Ruotiamo il vettore velocità locale (surge, sway) nell'orientamento attuale
+        d_pos_B_local = np.array([v_sway_B, v_surge_B]) * dt
+        d_pos_B_world = rotate_vec(d_pos_B_local, -heading_deg) # -heading per rotazione matematica std
         
-        # Ruota heading
+        pos_B_world += d_pos_B_world
+        
+        # B. Ruotiamo la nave (Cambia heading)
         d_theta = np.degrees(v_rot * dt)
-        heading_deg -= d_theta 
+        heading_deg -= d_theta
         
-        # Ricalcola centro basandosi sul nuovo angolo (Pivot rimane fermo nella rotazione pura)
-        rad_new = np.radians(heading_deg)
-        from_pivot_to_center = np.array([np.sin(rad_new), -np.cos(rad_new)]) * pivot_local_dist
-        center_pos = current_pivot_pos + from_pivot_to_center
-        
-        # B. Traslazione Lineare (Surge & Sway muovono tutto il sistema)
-        c, s = np.cos(rad_new), np.sin(rad_new)
-        
-        # Proiezione velocità locali su assi mondo
-        dx_world = (v_surge * s + v_sway * c) * dt
-        dy_world = (v_surge * c - v_sway * s) * dt
-        
-        center_pos[0] += dx_world
-        center_pos[1] += dy_world
+        # C. Ricostruiamo il Centro della Nave per il plotting
+        # Il centro è sempre a una distanza fissa e angolo fisso rispetto a B.
+        # Vector B -> Center è (0, 12.0) locale.
+        vec_B_to_Center_world = rotate_vec(OFFSET_CENTER_FROM_B, -heading_deg)
+        pos_Center_world = pos_B_world + vec_B_to_Center_world
         
         if i % record_every == 0:
-            results.append((center_pos[0], center_pos[1], heading_deg))
+            results.append((pos_Center_world[0], pos_Center_world[1], heading_deg))
             
     return results
