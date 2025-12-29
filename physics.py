@@ -85,105 +85,91 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- LOGICA PREDITTIVA GEOMETRICA (FIXED) ---
-def rotate_point(point, pivot, angle_deg):
-    """Ruota un punto attorno a un pivot di un certo angolo."""
-    angle_rad = np.radians(angle_deg)
-    c, s = np.cos(angle_rad), np.sin(angle_rad)
-    px, py = point[0] - pivot[0], point[1] - pivot[1]
-    nx = px * c - py * s
-    ny = px * s + py * c
-    return np.array([nx + pivot[0], ny + pivot[1]])
-
+# --- LOGICA PREDITTIVA GEOMETRICA CON INERZIA ---
 def predict_trajectory(F_sx, F_dx, pos_sx_local, pos_dx_local, pp_y, total_time=30.0, steps=20):
-    dt = 0.5 
+    dt = 0.2  # Step temporale più fine per integrare meglio l'accelerazione
     n_steps = int(total_time / dt)
     record_every = max(1, n_steps // steps)
     
-    # Stato Iniziale: Centro nave (0,0), Heading 0
+    # Stato Iniziale
     center_pos = np.array([0.0, 0.0])
     heading_deg = 0.0
     
-    # Velocità accumulate
-    v_surge = 0.0 # Longitudinale (Nave)
-    v_sway = 0.0  # Laterale (Nave)
-    v_rot = 0.0   # Rotazionale (Attorno al Pivot)
+    # Velocità accumulate (Inizialmente zero)
+    v_surge = 0.0 
+    v_sway = 0.0  
+    v_rot = 0.0   
     
     results = []
     
-    # Parametri "Cinematici" per risposta visuale didattica
-    DRAG_LIN = 0.1 
-    DRAG_ROT = 0.2
-    K_FORCE = 0.0001
-    K_MOMENT = 0.0006
+    # --- COSTANTI FISICHE "CAPTAIN'S FEEL" ---
+    # Masse virtuali elevate per simulare il ritardo (Inerzia)
+    M_SURGE = 800.0   # Tonnellate virtuali longitudinali
+    M_SWAY = 1500.0   # Tonnellate virtuali laterali (più difficile spostare acqua di lato)
+    I_ROT = 60000.0   # Inerzia rotazionale
+    
+    # Resistenza dell'acqua (Drag) - Più basso è, più la nave mantiene l'abbrivio
+    DRAG_SURGE = 0.02 
+    DRAG_SWAY = 0.08  # Frena prima lateralmente
+    DRAG_ROT = 0.05   # Frena la rotazione gradualmente
     
     # Il Pivot Point è definito localmente sull'asse Y della nave
-    pivot_local_dist = pp_y # Distanza dal centro (0,0) lungo l'asse Y nave
+    pivot_local_dist = pp_y 
     
     for i in range(n_steps):
-        # 1. Calcolo Forze Totali (Riferimento Nave)
-        # Surge: Spinta Y
-        f_y_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81
-        # Sway: Spinta X
-        f_x_total = (F_sx[0] + F_dx[0]) * 1000 * 9.81
+        # 1. Calcolo Forze (Newton)
+        f_y_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81  # Forza Longitudinale
+        f_x_total = (F_sx[0] + F_dx[0]) * 1000 * 9.81  # Forza Laterale
         
-        # 2. Calcolo Momento Attorno al PIVOT A (Non al centro!)
-        # Vettori raggio dal Pivot ai propulsori
-        # Pivot è a (0, pp_y). Propulsori a pos_sx/dx
+        # 2. Calcolo Momento su Pivot A
         r_sx = np.array([pos_sx_local[0], pos_sx_local[1] - pp_y])
         r_dx = np.array([pos_dx_local[0], pos_dx_local[1] - pp_y])
         
-        # Momento = r cross F
         m_sx = (r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]) * 1000 * 9.81
         m_dx = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * 1000 * 9.81
         total_moment = m_sx + m_dx
         
-        # 3. Aggiornamento Velocità (Accumulo + Frizione)
-        v_surge += f_y_total * K_FORCE * dt
-        v_sway += f_x_total * K_FORCE * dt
-        v_rot += total_moment * K_MOMENT * dt
+        # 3. ACCELERAZIONE (F = ma -> a = F/m)
+        acc_surge = f_y_total / M_SURGE
+        acc_sway = f_x_total / M_SWAY
+        acc_rot = total_moment / I_ROT
         
-        v_surge *= (1.0 - DRAG_LIN)
-        v_sway *= (1.0 - DRAG_LIN)
+        # 4. INTEGRAZIONE VELOCITÀ (V = V0 + a*t) - Qui sta l'inerzia!
+        v_surge += acc_surge * dt
+        v_sway += acc_sway * dt
+        v_rot += acc_rot * dt
+        
+        # 5. APPLICAZIONE DRAG (Resistenza idrodinamica)
+        v_surge *= (1.0 - DRAG_SURGE)
+        v_sway *= (1.0 - DRAG_SWAY)
         v_rot *= (1.0 - DRAG_ROT)
         
-        # 4. Applicazione Movimento
+        # 6. Applicazione Movimento Geometrico (Pivot Logic)
         
         # A. Rotazione RIGIDA attorno al Pivot A
-        # Calcoliamo la posizione attuale del Pivot nel Mondo
         rad_h = np.radians(heading_deg)
-        # Il vettore dal centro al pivot ruotato
+        # Posizione attuale del pivot nel mondo
         to_pivot = np.array([-np.sin(rad_h), np.cos(rad_h)]) * pivot_local_dist
         current_pivot_pos = center_pos + to_pivot
         
-        # Applichiamo la rotazione angolare
+        # Ruota heading
         d_theta = np.degrees(v_rot * dt)
-        heading_deg -= d_theta # - per convenzione bussola/trigo inversa
+        heading_deg -= d_theta 
         
-        # ORA: Ricalcoliamo dove finisce il centro ruotando attorno a Pivot A
-        # (Il Pivot A rimane "fermo" durante la pura rotazione)
-        # Vettore dal pivot al centro (opposto di to_pivot, ma con nuovo angolo)
+        # Ricalcola centro basandosi sul nuovo angolo (Pivot rimane fermo nella rotazione pura)
         rad_new = np.radians(heading_deg)
         from_pivot_to_center = np.array([np.sin(rad_new), -np.cos(rad_new)]) * pivot_local_dist
-        
-        # Nuovo centro dopo la rotazione
         center_pos = current_pivot_pos + from_pivot_to_center
         
-        # B. Traslazione Lineare (Surge & Sway)
-        # Muove tutto il sistema (Pivot incluso)
+        # B. Traslazione Lineare (Surge & Sway muovono tutto il sistema)
         c, s = np.cos(rad_new), np.sin(rad_new)
         
-        # Surge (Avanti/Indietro rispetto alla prua attuale)
-        dx_surge = v_surge * s * dt
-        dy_surge = v_surge * c * dt
+        # Proiezione velocità locali su assi mondo
+        dx_world = (v_surge * s + v_sway * c) * dt
+        dy_world = (v_surge * c - v_sway * s) * dt
         
-        # Sway (Laterale rispetto alla prua attuale)
-        # Sway positivo (destra) -> +cos(heading) in X, -sin(heading) in Y
-        dx_sway = v_sway * c * dt
-        dy_sway = -v_sway * s * dt
-        
-        center_pos[0] += dx_surge + dx_sway
-        center_pos[1] += dy_surge + dy_sway
+        center_pos[0] += dx_world
+        center_pos[1] += dy_world
         
         if i % record_every == 0:
             results.append((center_pos[0], center_pos[1], heading_deg))
