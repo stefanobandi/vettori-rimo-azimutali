@@ -85,45 +85,35 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V8.0 ("PINNED BOW LOGIC") ---
-# La resistenza laterale non è applicata al centro, ma allo Skeg (Prua).
-# Questo blocca la prua e costringe la poppa a ruotare attorno ad essa.
-
+# --- FISICA RIPRISTINATA (Versione Stabile Newton + Skeg Corretto) ---
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Geometria
     point_B_y = POS_THRUSTERS_Y 
     point_A_y = pp_y            
     lever_arm = point_A_y - point_B_y 
     
-    # 1. Forze Propulsione (Base)
-    F_prop_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
-    F_prop_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
+    F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
+    F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
     
-    # Momento Propulsione
     center_B = np.array([0.0, point_B_y])
     r_sx = pos_sx - center_B 
     r_dx = pos_dx - center_B
     
-    # Coppia Motori
-    M_prop = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
-             (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
-    
-    # 2. Inerzia (Masse)
-    # Aumentiamo la Massa X per evitare scatti laterali istantanei ("Go-Kart feel")
-    VIRTUAL_MASS_X = MASS * 4.0 
+    M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
+               (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
+               
+    M_lever = F_total_x * lever_arm
+    M_total = M_pure_B + M_lever
+
+    # Masse Virtuali "Pesanti" per simulare inerzia e stabilità
+    VIRTUAL_MASS_X = MASS * 5.0
     VIRTUAL_MASS_Y = MASS * 1.2
-    VIRTUAL_INERTIA = 70000000.0 * 2.0
+    VIRTUAL_INERTIA = 70000000.0 * 1.5
     
-    # Parametri Damping e Skeg
-    # SKEG_POS_Y: Dove agisce la resistenza laterale? A Prua (es. +14m dal centro)
-    SKEG_POS_Y = 14.0 
-    # SKEG_COEFF: Quanto è "dura" l'acqua contro lo skeg? Altissimo.
-    SKEG_COEFF = 2500000.0 
-    
+    DAMP_X = 500000.0  
     DAMP_Y = 25000.0
     DAMP_N = 60000000.0
     
@@ -133,64 +123,21 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     results = []
     
     for i in range(n_total_steps):
-        # --- CORREZIONE FISICA V8.0: Resistance at Skeg ---
-        
-        # 1. Calcolo Velocità Laterale allo SKEG (Prua)
-        # La velocità di un punto P su un corpo rigido è: V_p = V_cm + Omega x R_p
-        # u = Velocità laterale (Sway) del CM
-        # r = Velocità angolare (Yaw Rate)
-        # Se ruoto CCW (r > 0), la prua (Y > 0) si muove a Sinistra (-X).
-        # Quindi: v_lat_skeg = u + (r * SKEG_POS_Y) ?? 
-        # Controlliamo i segni:
-        # r positivo (CCW). Skeg a y=+14. Vettoriale r x R = k * j = -i (Sinistra).
-        # Quindi vel dovuta a rotazione è negativa.
-        # Formula corretta: v_skeg_x = u - (r * SKEG_POS_Y) ??
-        # No, in coordinate navali standard (x=avanti, y=destra) è diverso.
-        # Nelle nostre coordinate: Y=Avanti, X=Destra. Heading 0.
-        # r positivo (rotazione CCW, prua a sinistra).
-        # Velocità tangenziale della prua dovuta a r: Direzione Sinistra (X negativo).
-        # Quindi v_rot = - r * dist.
-        # v_skeg_total_x = u (traslazione) - r * SKEG_POS_Y.
-        
-        v_skeg_x = u - (r * SKEG_POS_Y)
-        
-        # 2. Forza Resistenza allo Skeg
-        # Si oppone alla velocità locale dello Skeg.
-        F_skeg_res_x = - (v_skeg_x * SKEG_COEFF)
-        
-        # 3. Effetto della Forza Skeg sul CM
-        # Aggiunge forza laterale totale
-        F_total_x = F_prop_x + F_skeg_res_x
-        
-        # Aggiunge MOMENTO (Torque)
-        # Una forza applicata a Prua (Y positiva) diretta a Sinistra (X negativa)
-        # crea un momento CCW (positivo).
-        # Momento = r x F. r=(0, Skeg_Y). F=(F_skeg, 0).
-        # Cross product 2D: xFy - yFx -> 0 - SKEG_POS_Y * F_skeg_res_x
-        M_skeg = - (SKEG_POS_Y * F_skeg_res_x)
-        
-        # Nota: Se F_skeg è verso sinistra (negativa), -14 * (-F) = Positivo (CCW).
-        # Questo è CORRETTO: La resistenza a prua aiuta la rotazione se la poppa spinge.
-        
-        M_total = M_prop + M_skeg + (F_prop_x * (point_A_y - point_B_y)) # Steering lever
-        
-        # Resistenza Longitudinale e Rotazionale standard
+        Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
         Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
         Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
-        F_total_y = F_prop_y + Fy_res
-        M_final = M_total + Mn_res
+        # CORREZIONE SKEG: Segno negativo corretto per opporsi allo scarroccio
+        Fx_skeg_lift = - (r * 15000000.0)
         
-        # Accelerazioni
-        du = F_total_x / VIRTUAL_MASS_X
-        dv = F_total_y / VIRTUAL_MASS_Y
-        dr = M_final / VIRTUAL_INERTIA
+        du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
+        dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
+        dr = (M_total + Mn_res) / VIRTUAL_INERTIA
         
         u += du * dt
         v += dv * dt
         r += dr * dt
         
-        # Integrazione Posizione
         rad = np.radians(heading_deg)
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
