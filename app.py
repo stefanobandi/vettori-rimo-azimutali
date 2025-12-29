@@ -49,8 +49,8 @@ with st.sidebar:
     c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    # MODIFICA QUI: Aggiunta etichetta BETA
-    show_prediction = st.checkbox("Predizione Movimento (30s) (BETA - IN SVILUPPO)", value=True)
+    # Etichetta Beta rimossa o mantenuta a scelta, qui la rimetto standard
+    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -82,21 +82,17 @@ ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
-# Vettori forza teorici
 F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-# Calcolo intersezioni scia (Wash Hit)
 wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_eff_v, pos_dx)
 wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_eff_v, pos_sx)
 eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
 
-# Vettori forza effettivi (con penalità)
 F_sx_eff = F_sx_eff_v * eff_sx
 F_dx_eff = F_dx_eff_v * eff_dx
 ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
-# Risultanti globali (solo per display telemetria)
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
@@ -104,7 +100,6 @@ M_tm_CG = ((pos_sx-cg_pos)[0]*F_sx_eff[1] - (pos_sx-cg_pos)[1]*F_sx_eff[0] +
            (pos_dx-cg_pos)[0]*F_dx_eff[1] - (pos_dx-cg_pos)[1]*F_dx_eff[0])
 M_knm = M_tm_CG * G_ACCEL
 
-# Calcolo intersezione vettori
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
 use_weighted = True
 if inter is not None:
@@ -138,10 +133,8 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # --- PREDIZIONE CON NUOVA LOGICA A-B ---
     traj = []
     if show_prediction:
-        # Passiamo le forze singole (vettori), le posizioni locali dei propulsori e la Y del Pivot
         traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
@@ -185,26 +178,21 @@ with col_c:
         p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
-    # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
+    # --- ZOOM SQUARE BOX ---
     if show_prediction and len(traj) > 0:
         base_x = [-15, 15]
         base_y = [-25, 20]
         traj_x = [p[0] for p in traj]
         traj_y = [p[1] for p in traj]
-        
         all_x = base_x + traj_x
         all_y = base_y + traj_y
-        
         min_x, max_x = min(all_x), max(all_x)
         min_y, max_y = min(all_y), max(all_y)
-        
         center_x = (min_x + max_x) / 2
         center_y = (min_y + max_y) / 2
-        
         span_x = max_x - min_x
         span_y = max_y - min_y
         max_span = max(span_x, span_y) * 1.1 
-        
         ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
         ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
     else:
@@ -218,19 +206,13 @@ with col_c:
     if show_prediction:
         st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
 
-# --- TABELLA RIEPILOGATIVA FINALE ---
 st.write("---")
 st.subheader("📋 Telemetria di Manovra")
-
 c_data1, c_data2, c_data3, c_data4 = st.columns(4)
-with c_data1:
-    st.metric("Spinta Risultante", f"{res_ton:.1f} t")
-with c_data2:
-    st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
-with c_data3:
-    st.metric("Momento (CG)", f"{int(M_tm_CG)} t*m", delta_color="off")
-with c_data4:
-    st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+with c_data1: st.metric("Spinta Risultante", f"{res_ton:.1f} t")
+with c_data2: st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
+with c_data3: st.metric("Momento (CG)", f"{int(M_tm_CG)} t*m", delta_color="off")
+with c_data4: st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
 
 df_engines = pd.DataFrame({
     "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
