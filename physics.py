@@ -85,90 +85,107 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- LOGICA PREDITTIVA "CLASSROOM" (Geometrica A-B) ---
-# Obiettivo: Rendere evidente che B (Poppa) ruota attorno ad A (Pivot)
-# Downgrade fisico: Usiamo velocità proporzionali alle forze (Aristotelica) invece che F=ma (Newtoniana)
-# per avere una risposta immediata e visiva, ideale per la spiegazione in aula.
+# --- LOGICA PREDITTIVA GEOMETRICA (FIXED) ---
+def rotate_point(point, pivot, angle_deg):
+    """Ruota un punto attorno a un pivot di un certo angolo."""
+    angle_rad = np.radians(angle_deg)
+    c, s = np.cos(angle_rad), np.sin(angle_rad)
+    px, py = point[0] - pivot[0], point[1] - pivot[1]
+    nx = px * c - py * s
+    ny = px * s + py * c
+    return np.array([nx + pivot[0], ny + pivot[1]])
 
 def predict_trajectory(F_sx, F_dx, pos_sx_local, pos_dx_local, pp_y, total_time=30.0, steps=20):
-    dt = 0.5 # Step temporale più ampio per calcolo veloce
+    dt = 0.5 
     n_steps = int(total_time / dt)
     record_every = max(1, n_steps // steps)
     
-    # Stato Iniziale (Coordinate Mondo)
-    x, y, heading_deg = 0.0, 0.0, 0.0
+    # Stato Iniziale: Centro nave (0,0), Heading 0
+    center_pos = np.array([0.0, 0.0])
+    heading_deg = 0.0
     
-    # Velocità (Inizialmente 0)
-    v_long = 0.0 # Velocità longitudinale (Surge)
-    v_rot = 0.0  # Velocità angolare (Rate of Turn)
+    # Velocità accumulate
+    v_surge = 0.0 # Longitudinale (Nave)
+    v_sway = 0.0  # Laterale (Nave)
+    v_rot = 0.0   # Rotazionale (Attorno al Pivot)
     
     results = []
     
-    # Parametri di "Smorzamento Didattico" (Frizione elevata per stabilizzare il moto)
-    # Questi valori rendono il movimento meno "scivoloso" e più "meccanico"
-    DRAG_LIN = 0.15 
-    DRAG_ROT = 0.25
-    FACTOR_FORCE_TO_SPEED = 0.00008 # Scaling per convertire tonnellate in velocità
-    FACTOR_MOMENT_TO_ROT = 0.0005   # Scaling per convertire momento in rotazione
+    # Parametri "Cinematici" per risposta visuale didattica
+    DRAG_LIN = 0.1 
+    DRAG_ROT = 0.2
+    K_FORCE = 0.0001
+    K_MOMENT = 0.0006
+    
+    # Il Pivot Point è definito localmente sull'asse Y della nave
+    pivot_local_dist = pp_y # Distanza dal centro (0,0) lungo l'asse Y nave
     
     for i in range(n_steps):
-        # 1. Calcolo Forze Locali
-        # Forza Longitudinale Totale (Surge) -> Muove A e B avanti/indietro
-        fy_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81
+        # 1. Calcolo Forze Totali (Riferimento Nave)
+        # Surge: Spinta Y
+        f_y_total = (F_sx[1] + F_dx[1]) * 1000 * 9.81
+        # Sway: Spinta X
+        f_x_total = (F_sx[0] + F_dx[0]) * 1000 * 9.81
         
-        # 2. Calcolo Momento Attorno al Pivot A
-        # Il propulsore applica forza in pos_sx/dx.
-        # Il braccio di leva è la distanza vettoriale dal Pivot A (0, pp_y) al propulsore.
-        pivot_local = np.array([0.0, pp_y])
-        
+        # 2. Calcolo Momento Attorno al PIVOT A (Non al centro!)
         # Vettori raggio dal Pivot ai propulsori
-        r_sx = pos_sx_local - pivot_local
-        r_dx = pos_dx_local - pivot_local
+        # Pivot è a (0, pp_y). Propulsori a pos_sx/dx
+        r_sx = np.array([pos_sx_local[0], pos_sx_local[1] - pp_y])
+        r_dx = np.array([pos_dx_local[0], pos_dx_local[1] - pp_y])
         
-        # Momento = r cross F (2D: r_x*F_y - r_y*F_x)
-        # Nota: Moltiplichiamo per costanti per unità fisiche coerenti
+        # Momento = r cross F
         m_sx = (r_sx[0] * F_sx[1] - r_sx[1] * F_sx[0]) * 1000 * 9.81
         m_dx = (r_dx[0] * F_dx[1] - r_dx[1] * F_dx[0]) * 1000 * 9.81
-        total_moment_on_pivot = m_sx + m_dx
+        total_moment = m_sx + m_dx
         
-        # 3. Dinamica Semplificata (Velocità proporzionale alla forza con inerzia smorzata)
-        # Aggiornamento Velocità Longitudinale
-        v_long += (fy_total * FACTOR_FORCE_TO_SPEED) * dt
-        v_long *= (1.0 - DRAG_LIN) # Frizione
+        # 3. Aggiornamento Velocità (Accumulo + Frizione)
+        v_surge += f_y_total * K_FORCE * dt
+        v_sway += f_x_total * K_FORCE * dt
+        v_rot += total_moment * K_MOMENT * dt
         
-        # Aggiornamento Velocità di Rotazione (Attorno ad A)
-        v_rot += (total_moment_on_pivot * FACTOR_MOMENT_TO_ROT) * dt
-        v_rot *= (1.0 - DRAG_ROT) # Frizione rotazionale
+        v_surge *= (1.0 - DRAG_LIN)
+        v_sway *= (1.0 - DRAG_LIN)
+        v_rot *= (1.0 - DRAG_ROT)
         
-        # 4. Integrazione Posizione (Geometrica)
-        rad = np.radians(heading_deg)
-        c, s = np.cos(rad), np.sin(rad)
+        # 4. Applicazione Movimento
         
-        # A. Spostamento Longitudinale (Lungo l'asse della nave)
-        dx_surge = v_long * s * dt
-        dy_surge = v_long * c * dt
+        # A. Rotazione RIGIDA attorno al Pivot A
+        # Calcoliamo la posizione attuale del Pivot nel Mondo
+        rad_h = np.radians(heading_deg)
+        # Il vettore dal centro al pivot ruotato
+        to_pivot = np.array([-np.sin(rad_h), np.cos(rad_h)]) * pivot_local_dist
+        current_pivot_pos = center_pos + to_pivot
         
-        x += dx_surge
-        y += dy_surge
-        
-        # B. Rotazione "Pura" Attorno al Pivot Corrente
-        # In questo modello, la rotazione avviene attorno al punto A (pivot_local trasformato in mondo).
-        # Tuttavia, per semplificare la visualizzazione di una traiettoria, ruotiamo l'heading
-        # e muoviamo il centro della nave di conseguenza per mantenere il pivot "fermo" lateralmente.
-        
+        # Applichiamo la rotazione angolare
         d_theta = np.degrees(v_rot * dt)
-        heading_deg -= d_theta # Meno perché rotazione antioraria è positiva in math, ma bussola 0=N, 90=E
+        heading_deg -= d_theta # - per convenzione bussola/trigo inversa
         
-        # Nota: La rotazione attorno a un punto diverso dal centro geometrico (0,0) implica
-        # che il centro geometrico (x,y) si sposti.
-        # Spostamento del CG dovuto alla rotazione attorno a PP:
-        # Delta_Pos = Rotazione(PP - CG) - (PP - CG)
-        # Braccio dal CG (0,0 locale) al PP (0, pp_y locale) = pp_y
-        # Se ruoto di d_theta, il CG si sposta lateralmente.
-        # Implementazione semplificata: Aggiorniamo solo heading e surge per chiarezza visiva,
-        # assumendo che l'occhio segua la sagoma.
+        # ORA: Ricalcoliamo dove finisce il centro ruotando attorno a Pivot A
+        # (Il Pivot A rimane "fermo" durante la pura rotazione)
+        # Vettore dal pivot al centro (opposto di to_pivot, ma con nuovo angolo)
+        rad_new = np.radians(heading_deg)
+        from_pivot_to_center = np.array([np.sin(rad_new), -np.cos(rad_new)]) * pivot_local_dist
+        
+        # Nuovo centro dopo la rotazione
+        center_pos = current_pivot_pos + from_pivot_to_center
+        
+        # B. Traslazione Lineare (Surge & Sway)
+        # Muove tutto il sistema (Pivot incluso)
+        c, s = np.cos(rad_new), np.sin(rad_new)
+        
+        # Surge (Avanti/Indietro rispetto alla prua attuale)
+        dx_surge = v_surge * s * dt
+        dy_surge = v_surge * c * dt
+        
+        # Sway (Laterale rispetto alla prua attuale)
+        # Sway positivo (destra) -> +cos(heading) in X, -sin(heading) in Y
+        dx_sway = v_sway * c * dt
+        dy_sway = -v_sway * s * dt
+        
+        center_pos[0] += dx_surge + dx_sway
+        center_pos[1] += dy_surge + dy_sway
         
         if i % record_every == 0:
-            results.append((x, y, heading_deg))
+            results.append((center_pos[0], center_pos[1], heading_deg))
             
     return results
