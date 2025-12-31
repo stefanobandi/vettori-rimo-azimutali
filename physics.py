@@ -85,73 +85,70 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V6.1: Dual Point Resistance Model ---
-# Calcola le forze separatamente su Skeg (Prua) e Poppa basandosi
-# sulle loro velocità locali. 
+# --- FISICA V6.2: Dual Point Resistance (Debugged) ---
+# FIX: Corretto scambio assi u/v. 
+# Convention: u = Sway (X, Laterale), v = Surge (Y, Longitudinale)
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Parametri geometrici per il calcolo dei momenti motore
-    center_B = np.array([0.0, POS_THRUSTERS_Y]) # Punto medio tra propulsori (approx)
+    # Parametri geometrici
+    center_B = np.array([0.0, POS_THRUSTERS_Y]) 
     
     # 1. Input Forze Motori (in Newton)
-    # Converto da Tonnellate a Newton (1t ~ 9810 N)
-    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL
-    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL
+    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL # Totale Laterale
+    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL # Totale Longitudinale
     
-    # Calcolo Momento Motori (Torque) rispetto al baricentro (0,0)
-    # Nota: pos_sx e pos_dx sono coordinate rispetto a (0,0)
+    # Calcolo Momento Motori
     M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
             (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
     M_eng = M_eng * 1000 * G_ACCEL
 
-    # Masse inerziali aumentate (Added Mass effect)
-    M_VIRT_X = MASS * 1.1  # Poca massa aggiunta longitudinale
-    M_VIRT_Y = MASS * 1.8  # Molta massa aggiunta laterale (spostare acqua di lato è dura)
+    # Masse inerziali
+    M_VIRT_X = MASS * 1.8  # Massa per Sway (Laterale) -> Alta inerzia
+    M_VIRT_Y = MASS * 1.1  # Massa per Surge (Longitudinale) -> Bassa inerzia
     
-    # Stato Iniziale
+    # Stato Iniziale (Velocità nel sistema nave)
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u, v, r = 0.0, 0.0, 0.0 # Surge, Sway, Yaw rate
+    u = 0.0 # Sway velocity (Laterale, X)
+    v = 0.0 # Surge velocity (Longitudinale, Y)
+    r = 0.0 # Yaw rate
     
     results = []
     
     for i in range(n_total_steps):
         
-        # --- CALCOLO VELOCITÀ LOCALI ---
-        # Velocità laterale locale a Prua (Skeg) e Poppa
-        # v_local = v_baricentro + (velocità_rotazione * distanza_dal_centro)
-        v_bow_lat = v + (r * Y_BOW_CP)
-        v_stern_lat = v + (r * Y_STERN_CP)
+        # --- CALCOLO VELOCITÀ LATERALI LOCALI (SWAY) ---
+        # Cruciale: Usiamo 'u' (Sway), non 'v'.
+        v_bow_sway = u + (r * Y_BOW_CP)
+        v_stern_sway = u + (r * Y_STERN_CP)
         
         # --- FORZE IDRODINAMICHE (DAMPING) ---
-        # Resistenza = -K * v * |v|
         
-        # 1. Resistenza Longitudinale (Scafo)
-        F_drag_long = -np.sign(u) * K_Y * (u**2)
+        # 1. Resistenza Longitudinale (Agisce su v)
+        F_drag_surge = -np.sign(v) * K_Y * (v**2)
         
-        # 2. Resistenza Laterale PRUA (Skeg Effect)
-        F_drag_bow = -np.sign(v_bow_lat) * K_X_BOW * (v_bow_lat**2)
+        # 2. Resistenza Laterale PRUA (Agisce su v_bow_sway)
+        F_drag_bow = -np.sign(v_bow_sway) * K_X_BOW * (v_bow_sway**2)
         
-        # 3. Resistenza Laterale POPPA (Stern Effect)
-        F_drag_stern = -np.sign(v_stern_lat) * K_X_STERN * (v_stern_lat**2)
+        # 3. Resistenza Laterale POPPA (Agisce su v_stern_sway)
+        F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
         
-        # 4. Resistenza Rotazionale (Rotational Damping)
+        # 4. Resistenza Rotazionale
         M_drag_rot = -np.sign(r) * K_W * (r**2)
         
-        # --- SOMMA FORZE E MOMENTI ---
+        # --- SOMMA FORZE E MOMENTI (Local Frame) ---
         
-        # Totale Surge (X)
-        Sum_Fx = F_eng_x + F_drag_long
+        # Totale Sway (X) -> Motori X + Resistenze Laterali
+        Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
         
-        # Totale Sway (Y) - Somma spinte motori e resistenze locali
-        Sum_Fy = F_eng_y + F_drag_bow + F_drag_stern
+        # Totale Surge (Y) -> Motori Y + Resistenza Longitudinale
+        Sum_Fy = F_eng_y + F_drag_surge
         
-        # Totale Momento (N)
-        # Il momento delle resistenze è: Forza * Braccio
-        M_res_bow = F_drag_bow * Y_BOW_CP
+        # Totale Momento (N) -> Torque Motori + Torque Resistenze Laterali
+        M_res_bow = F_drag_bow * Y_BOW_CP      # Forza X * Braccio Y
         M_res_stern = F_drag_stern * Y_STERN_CP
         
         Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
@@ -166,14 +163,19 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         r += dr * dt
         
         # Integrazione Posizione nel Mondo
+        # Ruotiamo le velocità locali (u,v) nell'orientamento del mondo
         rad = np.radians(heading_deg)
-        # Ruota il vettore velocità dal sistema nave al sistema mondo
+        
+        # Standard rotazione vettoriale:
+        # X_world = u*cos(th) - v*sin(th) ... No, wait.
+        # Qui Y è "Avanti" (Heading=0 -> Y+). X è "Destra".
+        # Se Heading=0: dx=u (Sway), dy=v (Surge).
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
-        heading_deg -= np.degrees(r * dt) # Sottrai perché r positivo è antiorario (matematico), bussola è oraria
+        heading_deg -= np.degrees(r * dt) 
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
