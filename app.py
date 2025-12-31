@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.0", layout="wide")
+st.set_page_config(page_title="ASD Centurion V6.1", layout="wide")
 
 st.markdown("""
 <style>
@@ -37,7 +37,8 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' �
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Dimensioni:</b> 32.50 m x 11.70 m | <b>Bollard Pull:</b> 70 ton | <b>Fisica:</b> Modello A (Pivot) & B (Poppa)
+    <b>Versione:</b> V6.1 (Dual Skeg Physics) | <b>Bollard Pull:</b> 70 ton <br>
+    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa)
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -49,8 +50,7 @@ with st.sidebar:
     c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    # MODIFICA QUI: Aggiunta etichetta [BETA]
-    show_prediction = st.checkbox("Predizione Movimento (30s) [BETA]", value=True)
+    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -138,7 +138,7 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # --- PREDIZIONE CON LOGICA STANDARD V6.0 ---
+    # --- PREDIZIONE ---
     traj = []
     if show_prediction:
         traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
