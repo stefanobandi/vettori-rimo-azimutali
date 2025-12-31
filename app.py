@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.1", layout="wide")
+st.set_page_config(page_title="ASD Centurion V6.2", layout="wide")
 
 st.markdown("""
 <style>
@@ -37,8 +37,8 @@ st.markdown("<h1 style='text-align: center;'>âš“ Rimorchiatore ASD 'CENTURION' â
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> V6.1 (Dual Skeg Physics) | <b>Bollard Pull:</b> 70 ton <br>
-    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa)
+    <b>Versione:</b> V6.2 (Dual Skeg FIX) | <b>Bollard Pull:</b> 70 ton <br>
+    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa) - Assi corretti
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
