@@ -1,6 +1,6 @@
 import numpy as np
 import streamlit as st
-from constants import POS_THRUSTERS_X, POS_THRUSTERS_Y, MASS
+from constants import *
 
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
@@ -45,7 +45,7 @@ def apply_fast_side_step(direction):
             dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
             if abs(dy) < 0.01: return
             a_slave = np.degrees(np.arctan2(dx, dy)) % 360
-            denom = np.cos(np.radians(a_slave))
+            denom = np.cos(np.radians(a_drive))
             if abs(denom) < 0.001: return
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
             if 1.0 <= p_slave <= 100.0:
@@ -85,84 +85,95 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA ORIGINALE V6.0 (Ripristinata) ---
-# Modello Newtoniano standard con Skeg Lift a 950.000.
-# Questa è la versione di base stabile.
+# --- FISICA V6.1: Dual Point Resistance Model ---
+# Calcola le forze separatamente su Skeg (Prua) e Poppa basandosi
+# sulle loro velocità locali. 
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Parametri Modello
-    point_B_y = POS_THRUSTERS_Y # -12.0
-    point_A_y = pp_y            # 5.30 default (o variabile)
+    # Parametri geometrici per il calcolo dei momenti motore
+    center_B = np.array([0.0, POS_THRUSTERS_Y]) # Punto medio tra propulsori (approx)
     
-    # Braccio di Leva
-    lever_arm = point_A_y - point_B_y 
+    # 1. Input Forze Motori (in Newton)
+    # Converto da Tonnellate a Newton (1t ~ 9810 N)
+    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL
+    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL
     
-    # 1. Calcolo Forza Totale X e Y
-    F_total_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * 9.81
-    F_total_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * 9.81
-    
-    # 2. Calcolo Momenti
-    center_B = np.array([0.0, point_B_y])
-    r_sx = pos_sx - center_B 
-    r_dx = pos_dx - center_B
-    
-    # Momento Puro su B (Coppia dei motori)
-    M_pure_B = (r_sx[0]*F_sx_vec[1]*1000*9.81 - r_sx[1]*F_sx_vec[0]*1000*9.81) + \
-               (r_dx[0]*F_dx_vec[1]*1000*9.81 - r_dx[1]*F_dx_vec[0]*1000*9.81)
-               
-    # Momento da Leva (Steering effect)
-    M_lever = F_total_x * lever_arm
-    M_total = M_pure_B + M_lever
+    # Calcolo Momento Motori (Torque) rispetto al baricentro (0,0)
+    # Nota: pos_sx e pos_dx sono coordinate rispetto a (0,0)
+    M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
+            (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
+    M_eng = M_eng * 1000 * G_ACCEL
 
-    # Inerzia e Masse Virtuali (Per simulare 700t)
-    VIRTUAL_MASS_X = MASS * 2.0
-    VIRTUAL_MASS_Y = MASS * 1.2
-    VIRTUAL_INERTIA = 70000000.0 * 1.5
-    
-    # Smorzamento (Resistenza idrodinamica)
-    DAMP_X = 80000.0
-    DAMP_Y = 25000.0
-    DAMP_N = 60000000.0
+    # Masse inerziali aumentate (Added Mass effect)
+    M_VIRT_X = MASS * 1.1  # Poca massa aggiunta longitudinale
+    M_VIRT_Y = MASS * 1.8  # Molta massa aggiunta laterale (spostare acqua di lato è dura)
     
     # Stato Iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u, v, r = 0.0, 0.0, 0.0
+    u, v, r = 0.0, 0.0, 0.0 # Surge, Sway, Yaw rate
     
     results = []
     
     for i in range(n_total_steps):
-        # Calcolo Resistenza (Proporzionale alla velocità)
-        Fx_res = -(DAMP_X * u + 5000.0 * u * abs(u))
-        Fy_res = -(DAMP_Y * v + 1000.0 * v * abs(v))
-        Mn_res = -(DAMP_N * r + 20000000.0 * r * abs(r))
         
-        # --- EFFETTO SKEG STANDARD (V6.0) ---
-        # Quando la nave ruota (r), lo skeg a prua resiste lateralmente.
-        # Questo crea una forza che si oppone allo scarroccio della poppa durante la rotazione.
-        Fx_skeg_lift = r * 950000.0 
+        # --- CALCOLO VELOCITÀ LOCALI ---
+        # Velocità laterale locale a Prua (Skeg) e Poppa
+        # v_local = v_baricentro + (velocità_rotazione * distanza_dal_centro)
+        v_bow_lat = v + (r * Y_BOW_CP)
+        v_stern_lat = v + (r * Y_STERN_CP)
         
-        # Accelerazioni (F = ma)
-        du = (F_total_x + Fx_res + Fx_skeg_lift) / VIRTUAL_MASS_X
-        dv = (F_total_y + Fy_res) / VIRTUAL_MASS_Y
-        dr = (M_total + Mn_res) / VIRTUAL_INERTIA
+        # --- FORZE IDRODINAMICHE (DAMPING) ---
+        # Resistenza = -K * v * |v|
+        
+        # 1. Resistenza Longitudinale (Scafo)
+        F_drag_long = -np.sign(u) * K_Y * (u**2)
+        
+        # 2. Resistenza Laterale PRUA (Skeg Effect)
+        F_drag_bow = -np.sign(v_bow_lat) * K_X_BOW * (v_bow_lat**2)
+        
+        # 3. Resistenza Laterale POPPA (Stern Effect)
+        F_drag_stern = -np.sign(v_stern_lat) * K_X_STERN * (v_stern_lat**2)
+        
+        # 4. Resistenza Rotazionale (Rotational Damping)
+        M_drag_rot = -np.sign(r) * K_W * (r**2)
+        
+        # --- SOMMA FORZE E MOMENTI ---
+        
+        # Totale Surge (X)
+        Sum_Fx = F_eng_x + F_drag_long
+        
+        # Totale Sway (Y) - Somma spinte motori e resistenze locali
+        Sum_Fy = F_eng_y + F_drag_bow + F_drag_stern
+        
+        # Totale Momento (N)
+        # Il momento delle resistenze è: Forza * Braccio
+        M_res_bow = F_drag_bow * Y_BOW_CP
+        M_res_stern = F_drag_stern * Y_STERN_CP
+        
+        Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
+        
+        # --- INTEGRAZIONE NEWTONIANA ---
+        du = Sum_Fx / M_VIRT_X
+        dv = Sum_Fy / M_VIRT_Y
+        dr = Sum_M / I_Z
         
         u += du * dt
         v += dv * dt
         r += dr * dt
         
-        # Integrazione Posizione
+        # Integrazione Posizione nel Mondo
         rad = np.radians(heading_deg)
-        # Velocità rispetto al mondo
+        # Ruota il vettore velocità dal sistema nave al sistema mondo
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
-        heading_deg -= np.degrees(r * dt)
+        heading_deg -= np.degrees(r * dt) # Sottrai perché r positivo è antiorario (matematico), bussola è oraria
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
