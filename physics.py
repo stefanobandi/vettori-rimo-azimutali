@@ -1,170 +1,134 @@
-import numpy as np
-import streamlit as st
-from constants import *
+import math
 
-def apply_slow_side_step(direction):
-    pp_y = st.session_state.pp_y
-    dy = pp_y - POS_THRUSTERS_Y
-    dist_x_calcolo = POS_THRUSTERS_X 
-    try:
-        alpha_rad = np.arctan2(dist_x_calcolo, dy)
-        alpha_deg = np.degrees(alpha_rad)
-        if direction == "DRITTA":
-            a1_set, a2_set = alpha_deg, 180 - alpha_deg
-        else:
-            a1_set, a2_set = 180 + alpha_deg, 360 - alpha_deg
-        st.session_state.p1 = 50
-        st.session_state.a1 = int(round(a1_set % 360))
-        st.session_state.p2 = 50
-        st.session_state.a2 = int(round(a2_set % 360))
-    except Exception as e:
-        st.error(f"Errore calcolo Slow: {e}")
+# --- CONFIGURAZIONE GEOMETRICA RIMORCHIATORE ---
+# Coordinate locali rispetto al centro geometrico (0,0)
+# Assumiamo Y positivo verso la prua, Y negativo verso la poppa.
 
-def apply_fast_side_step(direction):
-    pp_y = st.session_state.pp_y
-    dist_y = pp_y - POS_THRUSTERS_Y 
-    try:
-        if direction == "DRITTA":
-            a_drive, p_drive = 45.0, 50.0
-            x_drive, x_slave = -POS_THRUSTERS_X, POS_THRUSTERS_X
-            x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
-            dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
-            if abs(dy) < 0.01: return
-            a_slave = np.degrees(np.arctan2(dx, dy)) % 360
-            denom = np.cos(np.radians(a_slave))
-            if abs(denom) < 0.001: return
-            p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
-            if 1.0 <= p_slave <= 100.0:
-                st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
-                st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
-        else:
-            a_drive, p_drive = 315.0, 50.0
-            x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
-            x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
-            dx, dy = x_slave - x_int, POS_THRUSTERS_Y - pp_y
-            if abs(dy) < 0.01: return
-            a_slave = np.degrees(np.arctan2(dx, dy)) % 360
-            denom = np.cos(np.radians(a_drive))
-            if abs(denom) < 0.001: return
-            p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
-            if 1.0 <= p_slave <= 100.0:
-                st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
-                st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
-                st.toast(f"Fast Sinistra: Slave {int(round(p_slave))}%", icon="⚡")
-    except Exception as e:
-        st.error(f"Errore geometrico: {e}")
+# PUNTO A: Skeg (il perno per le virate in avanzamento e crabbing)
+# Posizionato a poppa estrema
+PIVOT_A_Y = -25.0 
 
-def apply_turn_on_the_spot(direction):
-    potenza = 50
-    if direction == "SINISTRA":
-        st.session_state.p1, st.session_state.a1 = potenza, 135
-        st.session_state.p2, st.session_state.a2 = potenza, 45
+# PUNTO B: Centro Propulsori (il perno per le rotazioni pure)
+# Posizionato tra i due azimuthali come indicato (X=0, Y=-12)
+PIVOT_B_Y = -12.0
+
+# Posizione laterale dei propulsori (distanza dal centro asse longitudinale)
+PROP_OFFSET_X = 6.0  
+
+def calculate_new_position(x, y, heading, az_l, pwr_l, az_r, pwr_r, dt=0.1):
+    """
+    Calcola la nuova posizione (x, y, heading) applicando la logica del 
+    Doppio Pivot Point (Skeg vs Propulsori).
+    """
+    
+    # 1. Conversione input in radianti e scala 0-1
+    rad_l = math.radians(az_l)
+    rad_r = math.radians(az_r)
+    p_l = pwr_l / 100.0
+    p_r = pwr_r / 100.0
+    
+    # 2. Calcolo Vettori di Spinta Locali (Local Frame)
+    # Fx = spinta laterale, Fy = spinta longitudinale
+    thrust_l_x = p_l * math.sin(rad_l)
+    thrust_l_y = p_l * math.cos(rad_l)
+    
+    thrust_r_x = p_r * math.sin(rad_r)
+    thrust_r_y = p_r * math.cos(rad_r)
+    
+    # Forza Totale Locale
+    total_force_x = thrust_l_x + thrust_r_x
+    total_force_y = thrust_l_y + thrust_r_y
+    
+    # 3. Logica di Selezione del Pivot Point
+    # Calcoliamo la differenza angolare tra i due propulsori per capire la manovra
+    angle_diff = abs(az_l - az_r)
+    if angle_diff > 180:
+        angle_diff = 360 - angle_diff
+        
+    # Identificazione Scenario: Rotazione Pura (Pure Spin)
+    # Se la differenza è circa 180 gradi (es. 0 e 180), usiamo il punto B.
+    # Usiamo un range di tolleranza (es. tra 160 e 200 gradi).
+    is_pure_spin = False
+    if 160 <= angle_diff <= 200:
+        is_pure_spin = True
+        
+    # Selezione Coordinate Pivot attivo
+    if is_pure_spin:
+        # Scenario 2: Rotazione sul posto -> Perno B (Tra i propulsori)
+        current_pivot_y = PIVOT_B_Y
     else:
-        st.session_state.p1, st.session_state.a1 = potenza, 315
-        st.session_state.p2, st.session_state.a2 = potenza, 225
+        # Scenario 1 (Avanzamento) e 3 (Crabbing) -> Perno A (Skeg)
+        current_pivot_y = PIVOT_A_Y
 
-def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
-    wash_len = np.linalg.norm(wash_vec)
-    if wash_len < 0.1: return False
-    wash_dir = wash_vec / wash_len
-    to_target = target_pos - origin
-    proj_length = np.dot(to_target, wash_dir)
-    if proj_length > 0: 
-        perp_dist = np.linalg.norm(to_target - (proj_length * wash_dir))
-        return perp_dist < threshold
-    return False
-
-def intersect_lines(p1, angle1_deg, p2, angle2_deg):
-    th1, th2 = np.radians(90 - angle1_deg), np.radians(90 - angle2_deg)
-    v1, v2 = np.array([np.cos(th1), np.sin(th1)]), np.array([np.cos(th2), np.sin(th2)])
-    matrix = np.column_stack((v1, -v2))
-    if abs(np.linalg.det(matrix)) < 1e-4: return None
-    try:
-        t = np.linalg.solve(matrix, p2 - p1)[0]
-        return p1 + t * v1
-    except: return None
-
-# --- FISICA V6.2: Dual Point Resistance (STABILIZED) ---
-
-def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
-    dt = 0.2
-    n_total_steps = int(total_time / dt)
-    record_every = max(1, n_total_steps // steps)
+    # 4. Calcolo del Momento (Torque)
+    # Il momento dipende dalla distanza tra il punto di applicazione della forza (i motori)
+    # e il punto di rotazione (il Pivot attuale).
     
-    # 1. Input Forze Motori (in Newton)
-    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL 
-    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL 
+    # Braccio di leva Y: Distanza longitudinale tra i motori (B) e il pivot attivo.
+    # Se Pivot è B, lever_arm_y = 0. Se Pivot è A, lever_arm_y = (-12) - (-25) = +13.
+    lever_arm_y = PIVOT_B_Y - current_pivot_y
     
-    # Momento Motori (Cross Product: r x F)
-    # Momento Positivo = Rotazione Antioraria (Left)
-    M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
-            (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
-    M_eng = M_eng * 1000 * G_ACCEL
+    # Torque Motore Sinistro (posizionato a -PROP_OFFSET_X, PIVOT_B_Y)
+    # Momento = F_y * dist_x - F_x * dist_y
+    # Nota sui segni: una forza Y positiva a sinistra (X negativa) crea rotazione oraria (+) o antioraria?
+    # Qui usiamo la convenzione standard: X destra, Y su.
+    # Posizione SX: (-6, -12). Pivot: (0, current_pivot_y).
+    # Vettore r (braccio) = Posizione_Motore - Posizione_Pivot
+    rx_l = -PROP_OFFSET_X - 0
+    ry_l = lever_arm_y  # PIVOT_B_Y - current_pivot_y
+    
+    # Prodotto vettoriale 2D (r cross F) = rx * Fy - ry * Fx
+    torque_l = (rx_l * thrust_l_y) - (ry_l * thrust_l_x)
+    
+    # Torque Motore Destro (posizionato a +PROP_OFFSET_X, PIVOT_B_Y)
+    rx_r = PROP_OFFSET_X - 0
+    ry_r = lever_arm_y
+    
+    torque_r = (rx_r * thrust_r_y) - (ry_r * thrust_r_x)
+    
+    total_torque = torque_l + torque_r
+    
+    # 5. Effetti Aggiuntivi per Realismo (Drift e Resistenza Skeg)
+    
+    # Se usiamo lo Skeg (Pivot A), l'avanzamento crea stabilità direzionale,
+    # ma se c'è una componente laterale forte (Crabbing 90°), lo skeg resiste e fa ruotare la barca.
+    if not is_pure_spin:
+        # Amplifichiamo l'effetto rotatorio se c'è spinta laterale mentre si fa perno a poppa
+        # Questo aiuta nello Scenario 3 (90°/90°) a far ruotare attorno allo skeg
+        total_torque += total_force_x * 0.8 
 
-    # Masse inerziali (Virtual Mass)
-    M_VIRT_X = MASS * 1.5  
-    M_VIRT_Y = MASS * 1.1  
+    # 6. Applicazione del Movimento
     
-    # Stato Iniziale
-    x, y, heading_deg = 0.0, 0.0, 0.0
-    u = 0.0 # Sway velocity (X)
-    v = 0.0 # Surge velocity (Y)
-    r = 0.0 # Yaw rate (rad/s)
+    # Fattori di velocità (da calibrare a piacere)
+    SPEED_FACTOR = 3.0
+    ROTATION_FACTOR = 4.0
     
-    results = []
-    
-    for i in range(n_total_steps):
-        
-        # --- FIX CRITICO CINEMATICA ---
-        # La velocità laterale locale è: u - (r * distanza_y)
-        # Se ruoto a Sinistra (r>0), la Prua (pos Y) va a Sinistra (neg X).
-        # Prima era '+', causando feedback loop infinito.
-        v_bow_sway = u - (r * Y_BOW_CP)
-        v_stern_sway = u - (r * Y_STERN_CP)
-        
-        # --- FORZE IDRODINAMICHE ---
-        
-        # Drag Longitudinale
-        F_drag_surge = -np.sign(v) * K_Y * (v**2)
-        
-        # Drag Laterale (Prua e Poppa)
-        F_drag_bow = -np.sign(v_bow_sway) * K_X_BOW * (v_bow_sway**2)
-        F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
-        
-        # Drag Rotazionale Puro
-        M_drag_rot = -np.sign(r) * K_W * (r**2)
-        
-        # --- SOMME ---
-        Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
-        Sum_Fy = F_eng_y + F_drag_surge
-        
-        # Momento dato dalle resistenze laterali
-        # Forza Laterale (X) applicata a distanza (Y) genera momento - (F * Y)
-        M_res_bow = - (F_drag_bow * Y_BOW_CP)
-        M_res_stern = - (F_drag_stern * Y_STERN_CP)
-        
-        Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
-        
-        # --- INTEGRAZIONE ---
-        u += (Sum_Fx / M_VIRT_X) * dt
-        v += (Sum_Fy / M_VIRT_Y) * dt
-        r += (Sum_M / I_Z) * dt
-        
-        # Decadimento per stabilità numerica se forze a zero
-        if abs(F_eng_x) < 10 and abs(F_eng_y) < 10:
-            u *= 0.98; v *= 0.98; r *= 0.98
+    if is_pure_spin:
+        # La rotazione sul posto è solitamente più reattiva
+        ROTATION_FACTOR *= 1.5
 
-        # Coordinate globali
-        rad = np.radians(heading_deg)
-        dx_w = u * np.cos(rad) + v * np.sin(rad)
-        dy_w = -u * np.sin(rad) + v * np.cos(rad)
-        
-        x += dx_w * dt
-        y += dy_w * dt
-        heading_deg -= np.degrees(r * dt) 
-        
-        if i % record_every == 0:
-            results.append((x, y, heading_deg))
-            
-    return results
+    # Delta nel sistema locale
+    local_dx = total_force_x * SPEED_FACTOR * dt
+    local_dy = total_force_y * SPEED_FACTOR * dt
+    delta_theta = total_torque * ROTATION_FACTOR * dt
+    
+    # 7. Trasformazione in Coordinate Globali
+    # Heading in gradi, convertiamo in radianti per la matrice di rotazione
+    # Assumiamo Heading 0° = Nord (Y+), 90° = Est (X+)
+    rad_h = math.radians(heading)
+    sin_h = math.sin(rad_h)
+    cos_h = math.cos(rad_h)
+    
+    # Rotazione vettore spostamento
+    # Se H=0 (Nord): global_x = local_x, global_y = local_y
+    # Se H=90 (Est): global_x = local_y, global_y = -local_x (dipende dalla convenzione assi)
+    # Formula standard navigazione (X=Est, Y=Nord, H=0 su Y):
+    global_dx = (local_dx * cos_h) + (local_dy * sin_h)
+    global_dy = (local_dy * cos_h) - (local_dx * sin_h)
+    
+    # Aggiornamento stato
+    new_x = x + global_dx
+    new_y = y + global_dy
+    new_heading = (heading + delta_theta) % 360
+    
+    return new_x, new_y, new_heading
