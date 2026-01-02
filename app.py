@@ -50,7 +50,8 @@ with st.sidebar:
     c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
+    # MODIFICA RICHIESTA: AGGIUNTA ETICHETTA BETA
+    show_prediction = st.checkbox("Predizione Movimento (30s) - beta -", value=True)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
