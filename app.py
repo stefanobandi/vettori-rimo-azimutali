@@ -1,249 +1,268 @@
 import streamlit as st
-import time
+import numpy as np
 import pandas as pd
-import physics
-import visualization
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+from constants import *
+from physics import *
+from visualization import *
 
-# --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(
-    page_title="Simulatore Rimorchiatore Azimuthale",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="ASD Centurion V6.2", layout="wide")
 
-# --- INIZIALIZZAZIONE SESSION STATE ---
-# Inizializziamo tutte le variabili di stato necessarie per la simulazione
-if 'x' not in st.session_state:
-    st.session_state.x = 0.0
-if 'y' not in st.session_state:
-    st.session_state.y = 0.0
-if 'heading' not in st.session_state:
-    st.session_state.heading = 0.0
-if 'az_l' not in st.session_state:
-    st.session_state.az_l = 0
-if 'pwr_l' not in st.session_state:
-    st.session_state.pwr_l = 0
-if 'az_r' not in st.session_state:
-    st.session_state.az_r = 0
-if 'pwr_r' not in st.session_state:
-    st.session_state.pwr_r = 0
-if 'pivot_mode' not in st.session_state:
-    st.session_state.pivot_mode = "Standard"
-if 'history' not in st.session_state:
-    st.session_state.history = []
+st.markdown("""
+<style>
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        overflow-wrap: break-word;
+        white-space: normal;
+    }
+    @media (max-width: 640px) {
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- FUNZIONI DI CALLBACK E LOGICA ---
+if "p1" not in st.session_state:
+    st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.30})
 
-def reset_simulation():
-    """Resetta completamente lo stato della simulazione."""
-    st.session_state.x = 0.0
-    st.session_state.y = 0.0
-    st.session_state.heading = 0.0
-    st.session_state.az_l = 0
-    st.session_state.pwr_l = 0
-    st.session_state.az_r = 0
-    st.session_state.pwr_r = 0
-    st.session_state.history = []
-    st.session_state.pivot_mode = "N/A"
+def set_engine_state(p1, a1, p2, a2):
+    st.session_state.p1, st.session_state.a1 = p1, a1
+    st.session_state.p2, st.session_state.a2 = p2, a2
 
-def update_manual_inputs():
-    """Callback per aggiornare lo stato quando si usano gli slider manuali."""
-    # Le variabili sono già legate agli slider tramite 'key', 
-    # questa funzione serve se vogliamo logiche aggiuntive al cambio valore.
-    pass
+def reset_engines(): set_engine_state(50, 0, 50, 0)
+def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
+# --- FUNZIONI CALLBACK MANCANTI (Aggiunte per far funzionare i pulsanti) ---
 def apply_fast_side_step(direction):
-    """
-    Imposta i motori per una traslazione laterale (Crabbing).
-    Configurazione: Motori a 90° o 270°, Potenza alta.
-    """
-    power = 75
+    """Preset per crabbing veloce"""
     if direction == "SINISTRA":
-        # Spinta verso sinistra: Azimuth deve spingere verso dritta (o viceversa in base alla convenzione)
-        # Assumendo 0=Nord, 90=Est. Per andare a Ovest (270), spingiamo verso 270.
-        st.session_state.az_l = 270
-        st.session_state.az_r = 270
-    elif direction == "DESTRA":
-        # Spinta verso Est
-        st.session_state.az_l = 90
-        st.session_state.az_r = 90
-    
-    st.session_state.pwr_l = power
-    st.session_state.pwr_r = power
+        # Per muovere a SX, spinta laterale. 
+        # Config ASD tipica: propulsori a 90° (spingono a dx -> scafo va a sx) o viceversa
+        set_engine_state(80, 90, 80, 90) 
+    elif direction == "DRITTA":
+        set_engine_state(80, 270, 80, 270)
 
-def apply_rotation(direction):
-    """
-    Imposta i motori per una rotazione pura sul posto (Pure Spin).
-    Configurazione: Motori contrapposti (0° vs 180°).
-    """
-    power = 60
-    if direction == "ORARIO":
-        # Motore SX avanti (0°), Motore DX indietro (180°) -> Coppia oraria
-        st.session_state.az_l = 0
-        st.session_state.az_r = 180
-    elif direction == "ANTIORARIO":
-        # Motore SX indietro (180°), Motore DX avanti (0°) -> Coppia antioraria
-        st.session_state.az_l = 180
-        st.session_state.az_r = 0
-        
-    st.session_state.pwr_l = power
-    st.session_state.pwr_r = power
+def apply_slow_side_step(direction):
+    """Preset per crabbing lento"""
+    if direction == "SINISTRA":
+        set_engine_state(40, 90, 40, 90)
+    elif direction == "DRITTA":
+        set_engine_state(40, 270, 40, 270)
 
-def apply_forward():
-    """Imposta i motori per avanzamento rettilineo standard."""
-    st.session_state.az_l = 0
-    st.session_state.az_r = 0
-    st.session_state.pwr_l = 50
-    st.session_state.pwr_r = 50
+def apply_turn_on_the_spot(direction):
+    """Preset per rotazione sul posto (Pure Spin)"""
+    if direction == "SINISTRA": # Antiorario
+        # SX Indietro (180), DX Avanti (0)
+        set_engine_state(60, 180, 60, 0)
+    elif direction == "DRITTA": # Orario
+        # SX Avanti (0), DX Indietro (180)
+        set_engine_state(60, 0, 60, 180)
+# --------------------------------------------------------------------------
 
-def apply_combined_maneuver():
-    """Esempio di manovra complessa: avanzamento con virata (15°/15°)."""
-    st.session_state.az_l = 15
-    st.session_state.az_r = 15
-    st.session_state.pwr_l = 75
-    st.session_state.pwr_r = 75
-
-# --- INTERFACCIA UTENTE: SIDEBAR ---
+st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
+st.markdown(f"""
+<div style='text-align: center;'>
+    <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
+    <b>Versione:</b> V6.2 (Dual Skeg FIX) | <b>Bollard Pull:</b> 70 ton <br>
+    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa) - Assi corretti
+</div>
+""", unsafe_allow_html=True)
+st.write("---")
 
 with st.sidebar:
-    st.header("🎛️ Pannello di Controllo")
-    
-    st.markdown("### Propulsore Sinistro (Port)")
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
-        st.metric("Azimuth SX", f"{st.session_state.az_l}°")
-    with col_l2:
-        st.metric("Potenza SX", f"{st.session_state.pwr_l}%")
-        
-    st.slider("Orientamento SX", 0, 360, key="az_l", on_change=update_manual_inputs)
-    st.slider("Manetta SX", 0, 100, key="pwr_l", on_change=update_manual_inputs)
-    
+    st.header("Comandi Globali")
+    c1, c2 = st.columns(2)
+    c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
+    c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
-    
-    st.markdown("### Propulsore Destro (Starboard)")
-    col_r1, col_r2 = st.columns(2)
-    with col_r1:
-        st.metric("Azimuth DX", f"{st.session_state.az_r}°")
-    with col_r2:
-        st.metric("Potenza DX", f"{st.session_state.pwr_r}%")
-        
-    st.slider("Orientamento DX", 0, 360, key="az_r", on_change=update_manual_inputs)
-    st.slider("Manetta DX", 0, 100, key="pwr_r", on_change=update_manual_inputs)
-    
+    show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
+    show_prediction = st.checkbox("Predizione Movimento (30s)", value=True)
+    show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
-    st.button("🔴 RESET TO ZERO", on_click=reset_simulation, use_container_width=True, type="primary")
+    st.markdown("### ↕️ Longitudinali")
+    cf1, cf2 = st.columns(2)
+    cf1.button("⬆️ Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
+    cf2.button("🔼 Mezza AVANTI", on_click=set_engine_state, args=(50,0,50,0), use_container_width=True)
+    ca1, ca2 = st.columns(2)
+    ca1.button("⬇️ Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
+    ca2.button("🔽 Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
+    st.markdown("---")
+    st.markdown("### ↔️ Side Step")
+    r1, r2 = st.columns(2)
+    r1.button("⬅️ Fast SX", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
+    r2.button("➡️ Fast DX", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
+    r3, r4 = st.columns(2)
+    r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
+    r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
+    st.markdown("---")
+    st.markdown("### 🔄 Turning on the Spot")
+    ts1, ts2 = st.columns(2)
+    ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
+    ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
 
-# --- CALCOLO FISICO (LOOP) ---
+pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
+pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
+cg_pos = np.array([0.0, 0.0]) 
 
-# Parametri temporali
-dt = 0.1 
+ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
+ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
+rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
-# Eseguiamo il calcolo fisico con il modulo aggiornato
-new_x, new_y, new_h = physics.calculate_new_position(
-    st.session_state.x, 
-    st.session_state.y, 
-    st.session_state.heading, 
-    st.session_state.az_l, 
-    st.session_state.pwr_l, 
-    st.session_state.az_r, 
-    st.session_state.pwr_r,
-    dt=dt
-)
+# Vettori forza teorici
+F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
+F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
-# Determina la modalità pivot per visualizzazione (Logica UI)
-# Replichiamo la logica di physics.py solo per dare feedback all'utente
-angle_diff = abs(st.session_state.az_l - st.session_state.az_r)
-if angle_diff > 180: angle_diff = 360 - angle_diff
+# Calcolo intersezioni scia (Wash Hit)
+wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_eff_v, pos_dx)
+wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_eff_v, pos_sx)
+eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
 
-pivot_display = "⚓ Skeg (Poppa)"
-pivot_color = "blue"
+# Vettori forza effettivi (con penalità)
+F_sx_eff = F_sx_eff_v * eff_sx
+F_dx_eff = F_dx_eff_v * eff_dx
+ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
-if 160 <= angle_diff <= 200:
-    pivot_display = "⚙️ Centro Propulsori (Spin)"
-    pivot_color = "orange"
+# Risultanti globali (solo per display telemetria)
+res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
+res_ton = np.sqrt(res_u**2 + res_v**2)
+direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
+M_tm_CG = ((pos_sx-cg_pos)[0]*F_sx_eff[1] - (pos_sx-cg_pos)[1]*F_sx_eff[0] + 
+           (pos_dx-cg_pos)[0]*F_dx_eff[1] - (pos_dx-cg_pos)[1]*F_dx_eff[0])
+M_knm = M_tm_CG * G_ACCEL
 
-# Aggiornamento stato
-st.session_state.x = new_x
-st.session_state.y = new_y
-st.session_state.heading = new_h
-st.session_state.pivot_mode = pivot_display
+# Calcolo intersezione vettori
+inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
+use_weighted = True
+if inter is not None:
+    if np.linalg.norm(inter) <= 50.0: use_weighted = False
 
-# Aggiornamento storico (limitato agli ultimi 100 punti per performance)
-st.session_state.history.append({'x': new_x, 'y': new_y})
-if len(st.session_state.history) > 1000:
-    st.session_state.history.pop(0)
+# --- LAYOUT PRINCIPALE ---
+col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 
-# --- INTERFACCIA UTENTE: MAIN AREA ---
-
-st.title("🚢 Simulatore ASD Tug")
-
-# Tab per organizzare la vista
-tab1, tab2 = st.tabs(["Visualizzazione Grafica", "Dati Telemetrici"])
-
-with tab1:
-    # Riga per i comandi rapidi (Sopra al grafico per accesso veloce)
-    st.subheader("Manovre Rapide (Preset)")
+with col_l:
+    st.slider("Potenza SX", 0, 100, key="p1", format="%d%%")
+    st.metric("Spinta SX", f"{ton1_eff:.1f} t")
+    st.slider("Azimuth SX", 0, 360, key="a1", format="%03d°")
+    st.pyplot(plot_clock(st.session_state.a1, 'red'))
     
-    c1, c2, c3, c4, c5 = st.columns(5)
+with col_r:
+    st.slider("Potenza DX", 0, 100, key="p2", format="%d%%")
+    st.metric("Spinta DX", f"{ton2_eff:.1f} t")
+    st.slider("Azimuth DX", 0, 360, key="a2", format="%03d°")
+    st.pyplot(plot_clock(st.session_state.a2, 'green'))
+
+with col_c:
+    with st.expander("📍 Target Pivot Point (Visual & Auto)", expanded=True):
+        pcol1, pcol2 = st.columns(2)
+        pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
+        pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x", format="%.2fm")
     
-    with c1:
-        st.button("⬅️ Crab SX", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
-    with c2:
-        st.button("➡️ Crab DX", on_click=apply_fast_side_step, args=("DESTRA",), use_container_width=True)
-    with c3:
-        st.button("🔄 Spin SX", on_click=apply_rotation, args=("ANTIORARIO",), use_container_width=True)
-    with c4:
-        st.button("🔃 Spin DX", on_click=apply_rotation, args=("ORARIO",), use_container_width=True)
-    with c5:
-        st.button("⬆️ Avanti (15°)", on_click=apply_combined_maneuver, use_container_width=True)
+    if wash_dx_hits_sx:
+        st.error("⚠️ ATTENZIONE: Flusso DX investe SX -> Perdita 20% spinta SX")
+    if wash_sx_hits_dx:
+        st.error("⚠️ ATTENZIONE: Flusso SX investe DX -> Perdita 20% spinta DX")
 
-    st.divider()
-
-    # Area Grafico
-    col_graph, col_info = st.columns([3, 1])
+    fig, ax = plt.subplots(figsize=(10, 12))
     
-    with col_info:
-        st.markdown(f"**Pivot Point Attivo:**")
-        st.markdown(f":{pivot_color}[**{pivot_display}**]")
-        st.markdown("---")
-        st.markdown(f"**Heading:** {int(st.session_state.heading)}°")
-        st.markdown(f"**Pos X:** {st.session_state.x:.1f}")
-        st.markdown(f"**Pos Y:** {st.session_state.y:.1f}")
-
-    with col_graph:
-        # Chiamata al modulo di visualizzazione
-        fig = visualization.draw_simulation(
-            st.session_state.x, 
-            st.session_state.y, 
-            st.session_state.heading,
-            st.session_state.az_l,
-            st.session_state.az_r
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # --- PREDIZIONE ---
+    traj = []
+    if show_prediction:
+        # Passiamo anche il pivot utente se volessimo usarlo, ma physics ora ha la sua logica automatica
+        traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
+        for idx, (tx, ty, th) in enumerate(traj):
+            alpha = (idx + 1) / (len(traj) + 5) * 0.4
+            draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
+            
+    draw_static_elements(ax, pos_sx, pos_dx)
+    
+    if show_wash:
+        draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
+        draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
         
-    st.caption("Il grafico mostra la posizione e l'orientamento del rimorchiatore. La freccia verde indica la prua.")
+    draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
+    draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
+    
+    origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
+    sc = 0.7
+    
+    if not show_construction:
+        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
+        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
+    else:
+        if inter is not None:
+            v_sx_len = np.linalg.norm(F_sx_eff)*sc; v_dx_len = np.linalg.norm(F_dx_eff)*sc
+            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.08, head_width=min(0.3, v_sx_len*0.4), head_length=min(0.4, v_sx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
+            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.08, head_width=min(0.3, v_dx_len*0.4), head_length=min(0.4, v_dx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
+            pSX_tip = inter + F_sx_eff*sc; pDX_tip = inter + F_dx_eff*sc; pRES_tip = inter + np.array([res_u, res_v])*sc
+            ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
+            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4); ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
+            
+    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
+    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
+    
+    if res_ton > 0.1:
+        v_res_len = res_ton * sc
+        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
+    
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Target PP")
+    
+    if abs(M_tm_CG) > 1:
+        p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
+        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
+    
+    # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
+    if show_prediction and len(traj) > 0:
+        base_x = [-15, 15]
+        base_y = [-25, 20]
+        traj_x = [p[0] for p in traj]
+        traj_y = [p[1] for p in traj]
+        
+        all_x = base_x + traj_x
+        all_y = base_y + traj_y
+        
+        min_x, max_x = min(all_x), max(all_x)
+        min_y, max_y = min(all_y), max(all_y)
+        
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        
+        span_x = max_x - min_x
+        span_y = max_y - min_y
+        max_span = max(span_x, span_y) * 1.1 
+        
+        ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
+        ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
+    else:
+        # Default view
+        ax.set_xlim(-30, 30)
+        ax.set_ylim(-40, 35)
+        
+    ax.set_aspect('equal')
+    ax.axis('off')
+    st.pyplot(fig)
+    
+    if show_prediction:
+        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
 
-with tab2:
-    st.subheader("Analisi Vettoriale")
-    st.write("Dettaglio delle forze applicate e coordinate.")
-    
-    # Creiamo un piccolo dataframe per lo stato attuale
-    data = {
-        "Parametro": ["X", "Y", "Heading", "Azimuth SX", "Power SX", "Azimuth DX", "Power DX", "Pivot Mode"],
-        "Valore": [
-            f"{st.session_state.x:.2f}",
-            f"{st.session_state.y:.2f}",
-            f"{st.session_state.heading:.1f}°",
-            f"{st.session_state.az_l}°",
-            f"{st.session_state.pwr_l}%",
-            f"{st.session_state.az_r}°",
-            f"{st.session_state.pwr_r}%",
-            st.session_state.pivot_mode
-        ]
-    }
-    df = pd.DataFrame(data)
-    st.dataframe(df, use_container_width=True)
-    
-    st.subheader("Note di Debug")
-    st.text(f"Delta Time Simulation: {dt}s")
-    st.text(f"Logic Engine: Physics v2 (Dynamic Pivot)")
+# --- TABELLA RIEPILOGATIVA FINALE ---
+st.write("---")
+st.subheader("📋 Telemetria di Manovra")
+
+c_data1, c_data2, c_data3, c_data4 = st.columns(4)
+with c_data1:
+    st.metric("Spinta Risultante", f"{res_ton:.1f} t")
+with c_data2:
+    st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
+with c_data3:
+    st.metric("Momento (CG)", f"{int(M_tm_CG)} t*m", delta_color="off")
+with c_data4:
+    st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+
+df_engines = pd.DataFrame({
+    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
+    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
+    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
+})
+st.table(df_engines)
