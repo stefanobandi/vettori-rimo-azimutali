@@ -1,10 +1,6 @@
 import numpy as np
 import streamlit as st
 from constants import *
-import math
-
-# --- FUNZIONI DI COMODO PER I PULSANTI ---
-# Necessarie per far funzionare i bottoni in app.py
 
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
@@ -29,7 +25,6 @@ def apply_fast_side_step(direction):
     dist_y = pp_y - POS_THRUSTERS_Y 
     try:
         if direction == "DRITTA":
-            # Configurazione geometrica per crabbing veloce
             a_drive, p_drive = 45.0, 50.0
             x_drive, x_slave = -POS_THRUSTERS_X, POS_THRUSTERS_X
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
@@ -39,13 +34,11 @@ def apply_fast_side_step(direction):
             denom = np.cos(np.radians(a_slave))
             if abs(denom) < 0.001: return
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
-            
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
                 st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
         else:
-            # Sinistra
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
             x_int = x_drive + dist_y * np.tan(np.radians(a_drive))
@@ -55,7 +48,6 @@ def apply_fast_side_step(direction):
             denom = np.cos(np.radians(a_drive))
             if abs(denom) < 0.001: return
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
-            
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
                 st.session_state.a1, st.session_state.p1 = int(round(a_slave)), int(round(p_slave))
@@ -66,13 +58,11 @@ def apply_fast_side_step(direction):
 def apply_turn_on_the_spot(direction):
     potenza = 50
     if direction == "SINISTRA":
-        # Rotazione Antioraria
-        st.session_state.p1, st.session_state.a1 = potenza, 180
-        st.session_state.p2, st.session_state.a2 = potenza, 0
+        st.session_state.p1, st.session_state.a1 = potenza, 135
+        st.session_state.p2, st.session_state.a2 = potenza, 45
     else:
-        # Rotazione Oraria
-        st.session_state.p1, st.session_state.a1 = potenza, 0
-        st.session_state.p2, st.session_state.a2 = potenza, 180
+        st.session_state.p1, st.session_state.a1 = potenza, 315
+        st.session_state.p2, st.session_state.a2 = potenza, 225
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
@@ -95,111 +85,99 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- NUOVA LOGICA DI PREDIZIONE (SMART PIVOT) ---
+# --- FISICA V6.2: Dual Point Resistance (Debugged) ---
+# FIX: Corretto scambio assi u/v. 
+# Convention: u = Sway (X, Laterale), v = Surge (Y, Longitudinale)
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
-    """
-    Calcola la traiettoria selezionando dinamicamente il punto di rotazione (Pivot Point)
-    in base alla configurazione dei motori.
-    """
-    dt = 0.5
+    dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # 1. Analisi Configurazione Motori
-    # Ricaviamo gli angoli dai vettori forza passati
-    # atan2(x, y) perché Y è l'asse "Nord/Avanti" e X è "Est/Destra"
-    ang_sx = np.degrees(np.arctan2(F_sx_vec[0], F_sx_vec[1])) % 360
-    ang_dx = np.degrees(np.arctan2(F_dx_vec[0], F_dx_vec[1])) % 360
+    # Parametri geometrici
+    center_B = np.array([0.0, POS_THRUSTERS_Y]) 
     
-    diff = abs(ang_sx - ang_dx)
-    if diff > 180: diff = 360 - diff
+    # 1. Input Forze Motori (in Newton)
+    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL # Totale Laterale
+    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL # Totale Longitudinale
     
-    # LOGICA DI SELEZIONE PIVOT:
-    # Se i motori sono contrapposti (circa 180° di differenza), è uno SPIN PURO.
-    # Il pivot deve essere tra i propulsori (Y = -12).
-    # Altrimenti (avanzamento, virata, crabbing), il pivot è sullo SKEG (Y = -25).
-    
-    is_pure_spin = False
-    if 160 <= diff <= 200:
-        is_pure_spin = True
-        pivot_y_active = POS_THRUSTERS_Y # Punto B (-12.0)
-    else:
-        pivot_y_active = -25.0           # Punto A (Skeg a poppa)
+    # Calcolo Momento Motori
+    M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
+            (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
+    M_eng = M_eng * 1000 * G_ACCEL
 
-    # 2. Setup Simulazione Semplificata
-    # Usiamo una fisica cinematica basata su forze e bracci di leva
+    # Masse inerziali
+    M_VIRT_X = MASS * 1.8  # Massa per Sway (Laterale) -> Alta inerzia
+    M_VIRT_Y = MASS * 1.1  # Massa per Surge (Longitudinale) -> Bassa inerzia
+    
+    # Stato Iniziale (Velocità nel sistema nave)
+    x, y, heading_deg = 0.0, 0.0, 0.0
+    u = 0.0 # Sway velocity (Laterale, X)
+    v = 0.0 # Surge velocity (Longitudinale, Y)
+    r = 0.0 # Yaw rate
+    
     results = []
     
-    # Stato iniziale
-    x, y, h = 0.0, 0.0, 0.0
-    vx, vy, vomega = 0.0, 0.0, 0.0 # Velocità locali
-    
-    # Parametri Inerziali simulati
-    mass = 100.0  # Valore arbitrario per calibrare la velocità visiva
-    moment_inertia = 800.0
-    drag_lin = 0.85
-    drag_rot = 0.80
-    
-    # Forza Totale (Lineare)
-    # Somma vettoriale delle spinte (già scalate in tonnellate nel file app.py)
-    # F_sx_vec è [ton_x, ton_y]
-    ft_x = F_sx_vec[0] + F_dx_vec[0]
-    ft_y = F_sx_vec[1] + F_dx_vec[1]
-    
-    # Calcolo del Torque (Momento Rotatorio)
-    # Il momento dipende da quanto sono lontani i motori dal PIVOT ATTIVO.
-    
-    # Braccio di leva Y: Distanza tra motori (-12) e Pivot Attivo
-    lever_arm_y = POS_THRUSTERS_Y - pivot_y_active
-    # Se Pivot è -12 (Spin), lever_arm_y = 0.
-    # Se Pivot è -25 (Skeg), lever_arm_y = -12 - (-25) = +13.
-    
-    # Calcolo momento generato da motore SX (che sta a X = -pos_x)
-    # Torque = Fy * dist_x - Fx * dist_y
-    # Motore SX: pos_x = -POS_THRUSTERS_X, pos_y = 0 (relativo ai propulsori)
-    # Ma il braccio y (dist_y) è lever_arm_y
-    
-    torque_sx = (F_sx_vec[1] * (-POS_THRUSTERS_X)) - (F_sx_vec[0] * lever_arm_y)
-    torque_dx = (F_dx_vec[1] * (POS_THRUSTERS_X)) - (F_dx_vec[0] * lever_arm_y)
-    
-    total_torque = torque_sx + torque_dx
-    
-    # Correzione "Effetto Timone" dello Skeg in avanzamento
-    # Se stiamo avanzando curvando (es. DX 15 / SX 15), la forza laterale deve creare rotazione
-    # perché lo Skeg fa perno.
-    if not is_pure_spin and abs(ft_x) > 0.1:
-        # Aggiungiamo momento extra basato sulla forza laterale
-        total_torque += ft_x * 8.0 
-
-    # Loop temporale
     for i in range(n_total_steps):
-        # Accelerazione
-        ax = ft_x / mass
-        ay = ft_y / mass
-        aomega = total_torque / moment_inertia
         
-        # Velocità
-        vx += ax * dt
-        vy += ay * dt
-        vomega += aomega * dt
+        # --- CALCOLO VELOCITÀ LATERALI LOCALI (SWAY) ---
+        # Cruciale: Usiamo 'u' (Sway), non 'v'.
+        v_bow_sway = u + (r * Y_BOW_CP)
+        v_stern_sway = u + (r * Y_STERN_CP)
         
-        # Drag (attrito)
-        vx *= drag_lin
-        vy *= drag_lin
-        vomega *= drag_rot
+        # --- FORZE IDRODINAMICHE (DAMPING) ---
         
-        # Calcolo spostamento nel mondo (rotazione coordinate)
-        rad_h = np.radians(h)
-        # X=Est, Y=Nord
-        dx_world = vx * np.cos(rad_h) + vy * np.sin(rad_h)
-        dy_world = -vx * np.sin(rad_h) + vy * np.cos(rad_h)
+        # 1. Resistenza Longitudinale (Agisce su v)
+        F_drag_surge = -np.sign(v) * K_Y * (v**2)
         
-        x += dx_world * dt
-        y += dy_world * dt
-        h += np.degrees(vomega * dt)
+        # 2. Resistenza Laterale PRUA (Agisce su v_bow_sway)
+        F_drag_bow = -np.sign(v_bow_sway) * K_X_BOW * (v_bow_sway**2)
+        
+        # 3. Resistenza Laterale POPPA (Agisce su v_stern_sway)
+        F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
+        
+        # 4. Resistenza Rotazionale
+        M_drag_rot = -np.sign(r) * K_W * (r**2)
+        
+        # --- SOMMA FORZE E MOMENTI (Local Frame) ---
+        
+        # Totale Sway (X) -> Motori X + Resistenze Laterali
+        Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
+        
+        # Totale Surge (Y) -> Motori Y + Resistenza Longitudinale
+        Sum_Fy = F_eng_y + F_drag_surge
+        
+        # Totale Momento (N) -> Torque Motori + Torque Resistenze Laterali
+        M_res_bow = F_drag_bow * Y_BOW_CP       # Forza X * Braccio Y
+        M_res_stern = F_drag_stern * Y_STERN_CP
+        
+        Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
+        
+        # --- INTEGRAZIONE NEWTONIANA ---
+        du = Sum_Fx / M_VIRT_X
+        dv = Sum_Fy / M_VIRT_Y
+        dr = Sum_M / I_Z
+        
+        u += du * dt
+        v += dv * dt
+        r += dr * dt
+        
+        # Integrazione Posizione nel Mondo
+        # Ruotiamo le velocità locali (u,v) nell'orientamento del mondo
+        rad = np.radians(heading_deg)
+        
+        # Standard rotazione vettoriale:
+        # X_world = u*cos(th) - v*sin(th) ... No, wait.
+        # Qui Y è "Avanti" (Heading=0 -> Y+). X è "Destra".
+        # Se Heading=0: dx=u (Sway), dy=v (Surge).
+        dx_w = u * np.cos(rad) + v * np.sin(rad)
+        dy_w = -u * np.sin(rad) + v * np.cos(rad)
+        
+        x += dx_w * dt
+        y += dy_w * dt
+        heading_deg -= np.degrees(r * dt) 
         
         if i % record_every == 0:
-            results.append((x, y, h))
+            results.append((x, y, heading_deg))
             
     return results
