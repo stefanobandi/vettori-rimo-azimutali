@@ -33,33 +33,6 @@ def set_engine_state(p1, a1, p2, a2):
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
-# --- FUNZIONI CALLBACK MANCANTI (Aggiunte per far funzionare i pulsanti) ---
-def apply_fast_side_step(direction):
-    """Preset per crabbing veloce"""
-    if direction == "SINISTRA":
-        # Per muovere a SX, spinta laterale. 
-        # Config ASD tipica: propulsori a 90° (spingono a dx -> scafo va a sx) o viceversa
-        set_engine_state(80, 90, 80, 90) 
-    elif direction == "DRITTA":
-        set_engine_state(80, 270, 80, 270)
-
-def apply_slow_side_step(direction):
-    """Preset per crabbing lento"""
-    if direction == "SINISTRA":
-        set_engine_state(40, 90, 40, 90)
-    elif direction == "DRITTA":
-        set_engine_state(40, 270, 40, 270)
-
-def apply_turn_on_the_spot(direction):
-    """Preset per rotazione sul posto (Pure Spin)"""
-    if direction == "SINISTRA": # Antiorario
-        # SX Indietro (180), DX Avanti (0)
-        set_engine_state(60, 180, 60, 0)
-    elif direction == "DRITTA": # Orario
-        # SX Avanti (0), DX Indietro (180)
-        set_engine_state(60, 0, 60, 180)
-# --------------------------------------------------------------------------
-
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
@@ -168,7 +141,6 @@ with col_c:
     # --- PREDIZIONE ---
     traj = []
     if show_prediction:
-        # Passiamo anche il pivot utente se volessimo usarlo, ma physics ora ha la sua logica automatica
         traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
