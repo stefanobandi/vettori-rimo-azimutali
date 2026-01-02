@@ -85,99 +85,83 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V6.2: Dual Point Resistance (Debugged) ---
-# FIX: Corretto scambio assi u/v. 
-# FIX 2: Corretta inversione momento rotatorio nella predizione (Cross Product Sign)
+# --- FISICA V6.2: Dual Point Resistance (STABILIZED) ---
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # Parametri geometrici
-    center_B = np.array([0.0, POS_THRUSTERS_Y]) 
-    
     # 1. Input Forze Motori (in Newton)
-    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL # Totale Laterale
-    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL # Totale Longitudinale
+    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL 
+    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL 
     
-    # Calcolo Momento Motori
-    # Cross Product 2D: (rx * Fy) - (ry * Fx)
+    # Momento Motori (Cross Product: r x F)
+    # Momento Positivo = Rotazione Antioraria (Left)
     M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
             (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
     M_eng = M_eng * 1000 * G_ACCEL
 
-    # Masse inerziali
-    M_VIRT_X = MASS * 1.8  # Massa per Sway (Laterale) -> Alta inerzia
-    M_VIRT_Y = MASS * 1.1  # Massa per Surge (Longitudinale) -> Bassa inerzia
+    # Masse inerziali (Virtual Mass)
+    M_VIRT_X = MASS * 1.5  
+    M_VIRT_Y = MASS * 1.1  
     
-    # Stato Iniziale (Velocità nel sistema nave)
+    # Stato Iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u = 0.0 # Sway velocity (Laterale, X)
-    v = 0.0 # Surge velocity (Longitudinale, Y)
-    r = 0.0 # Yaw rate (Positivo = Antiorario/Left in matematica, ma check visualizzazione)
+    u = 0.0 # Sway velocity (X)
+    v = 0.0 # Surge velocity (Y)
+    r = 0.0 # Yaw rate (rad/s)
     
     results = []
     
     for i in range(n_total_steps):
         
-        # --- CALCOLO VELOCITÀ LATERALI LOCALI (SWAY) ---
-        # La velocità laterale in un punto specifico dipende dalla rotazione
-        v_bow_sway = u + (r * Y_BOW_CP)
-        v_stern_sway = u + (r * Y_STERN_CP)
+        # --- FIX CRITICO CINEMATICA ---
+        # La velocità laterale locale è: u - (r * distanza_y)
+        # Se ruoto a Sinistra (r>0), la Prua (pos Y) va a Sinistra (neg X).
+        # Prima era '+', causando feedback loop infinito.
+        v_bow_sway = u - (r * Y_BOW_CP)
+        v_stern_sway = u - (r * Y_STERN_CP)
         
-        # --- FORZE IDRODINAMICHE (DAMPING) ---
+        # --- FORZE IDRODINAMICHE ---
         
-        # 1. Resistenza Longitudinale (Agisce su v)
+        # Drag Longitudinale
         F_drag_surge = -np.sign(v) * K_Y * (v**2)
         
-        # 2. Resistenza Laterale PRUA (Agisce su v_bow_sway)
+        # Drag Laterale (Prua e Poppa)
         F_drag_bow = -np.sign(v_bow_sway) * K_X_BOW * (v_bow_sway**2)
-        
-        # 3. Resistenza Laterale POPPA (Agisce su v_stern_sway)
         F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
         
-        # 4. Resistenza Rotazionale
+        # Drag Rotazionale Puro
         M_drag_rot = -np.sign(r) * K_W * (r**2)
         
-        # --- SOMMA FORZE E MOMENTI (Local Frame) ---
-        
-        # Totale Sway (X) -> Motori X + Resistenze Laterali
+        # --- SOMME ---
         Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
-        
-        # Totale Surge (Y) -> Motori Y + Resistenza Longitudinale
         Sum_Fy = F_eng_y + F_drag_surge
         
-        # Totale Momento (N) 
-        # FIX: Cross Product per drag laterale (Forza X applicata a dist Y)
-        # Formula: Moment = - (F_lateral * Y_dist)
-        # Spiegazione: Una forza positiva (Dx) a Prua (Y+) crea momento negativo (Orario).
+        # Momento dato dalle resistenze laterali
+        # Forza Laterale (X) applicata a distanza (Y) genera momento - (F * Y)
         M_res_bow = - (F_drag_bow * Y_BOW_CP)
         M_res_stern = - (F_drag_stern * Y_STERN_CP)
         
         Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
         
-        # --- INTEGRAZIONE NEWTONIANA ---
-        du = Sum_Fx / M_VIRT_X
-        dv = Sum_Fy / M_VIRT_Y
-        dr = Sum_M / I_Z
+        # --- INTEGRAZIONE ---
+        u += (Sum_Fx / M_VIRT_X) * dt
+        v += (Sum_Fy / M_VIRT_Y) * dt
+        r += (Sum_M / I_Z) * dt
         
-        u += du * dt
-        v += dv * dt
-        r += dr * dt
-        
-        # Integrazione Posizione nel Mondo
-        # Heading 0 = Nord (Y+), 90 = Est. Rotazione CW.
+        # Decadimento per stabilità numerica se forze a zero
+        if abs(F_eng_x) < 10 and abs(F_eng_y) < 10:
+            u *= 0.98; v *= 0.98; r *= 0.98
+
+        # Coordinate globali
         rad = np.radians(heading_deg)
-        
-        # Conversione velocità locali -> globali
-        # Se Heading=0: dx=u (Sway), dy=v (Surge)
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
-        # r positivo (CCW) diminuisce l'heading (CW map)
         heading_deg -= np.degrees(r * dt) 
         
         if i % record_every == 0:
