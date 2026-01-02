@@ -87,7 +87,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
 
 # --- FISICA V6.2: Dual Point Resistance (Debugged) ---
 # FIX: Corretto scambio assi u/v. 
-# Convention: u = Sway (X, Laterale), v = Surge (Y, Longitudinale)
+# FIX 2: Corretta inversione momento rotatorio nella predizione (Cross Product Sign)
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
@@ -102,6 +102,7 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL # Totale Longitudinale
     
     # Calcolo Momento Motori
+    # Cross Product 2D: (rx * Fy) - (ry * Fx)
     M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
             (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
     M_eng = M_eng * 1000 * G_ACCEL
@@ -114,14 +115,14 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     x, y, heading_deg = 0.0, 0.0, 0.0
     u = 0.0 # Sway velocity (Laterale, X)
     v = 0.0 # Surge velocity (Longitudinale, Y)
-    r = 0.0 # Yaw rate
+    r = 0.0 # Yaw rate (Positivo = Antiorario/Left in matematica, ma check visualizzazione)
     
     results = []
     
     for i in range(n_total_steps):
         
         # --- CALCOLO VELOCITÀ LATERALI LOCALI (SWAY) ---
-        # Cruciale: Usiamo 'u' (Sway), non 'v'.
+        # La velocità laterale in un punto specifico dipende dalla rotazione
         v_bow_sway = u + (r * Y_BOW_CP)
         v_stern_sway = u + (r * Y_STERN_CP)
         
@@ -147,9 +148,12 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         # Totale Surge (Y) -> Motori Y + Resistenza Longitudinale
         Sum_Fy = F_eng_y + F_drag_surge
         
-        # Totale Momento (N) -> Torque Motori + Torque Resistenze Laterali
-        M_res_bow = F_drag_bow * Y_BOW_CP      # Forza X * Braccio Y
-        M_res_stern = F_drag_stern * Y_STERN_CP
+        # Totale Momento (N) 
+        # FIX: Cross Product per drag laterale (Forza X applicata a dist Y)
+        # Formula: Moment = - (F_lateral * Y_dist)
+        # Spiegazione: Una forza positiva (Dx) a Prua (Y+) crea momento negativo (Orario).
+        M_res_bow = - (F_drag_bow * Y_BOW_CP)
+        M_res_stern = - (F_drag_stern * Y_STERN_CP)
         
         Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
         
@@ -163,18 +167,17 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         r += dr * dt
         
         # Integrazione Posizione nel Mondo
-        # Ruotiamo le velocità locali (u,v) nell'orientamento del mondo
+        # Heading 0 = Nord (Y+), 90 = Est. Rotazione CW.
         rad = np.radians(heading_deg)
         
-        # Standard rotazione vettoriale:
-        # X_world = u*cos(th) - v*sin(th) ... No, wait.
-        # Qui Y è "Avanti" (Heading=0 -> Y+). X è "Destra".
-        # Se Heading=0: dx=u (Sway), dy=v (Surge).
+        # Conversione velocità locali -> globali
+        # Se Heading=0: dx=u (Sway), dy=v (Surge)
         dx_w = u * np.cos(rad) + v * np.sin(rad)
         dy_w = -u * np.sin(rad) + v * np.cos(rad)
         
         x += dx_w * dt
         y += dy_w * dt
+        # r positivo (CCW) diminuisce l'heading (CW map)
         heading_deg -= np.degrees(r * dt) 
         
         if i % record_every == 0:
