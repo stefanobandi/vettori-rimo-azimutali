@@ -95,37 +95,55 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V6.4: Lateral Grip Logic (Fixing 90°/90° Pivot) ---
+# --- FISICA V6.5: Intelligent Pivot Shifting ---
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
-    """Simula traiettoria con logica Skeg sensibile alla spinta laterale."""
+    """
+    Simulazione Fisica con gestione avanzata del Pivot Point.
+    Distingue tra manovra di coppia (Pivot B) e manovra laterale (Pivot A).
+    """
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
     pp_center = np.array([0.0, pp_y])
     
-    # Forze Motori Newton
-    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL 
-    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL 
+    # 1. Analisi Forze Motori
+    F_sx_newton = F_sx_vec * 1000 * G_ACCEL
+    F_dx_newton = F_dx_vec * 1000 * G_ACCEL
     
-    # Calcolo se siamo in modalità "Spinta Laterale Pura" vs "Rotazione Pura"
-    # Somma scalare delle forze disponibili (grandezza totale)
-    total_thrust_avail = (np.linalg.norm(F_sx_vec) + np.linalg.norm(F_dx_vec)) * 1000 * G_ACCEL
-    # Forza laterale netta risultante
-    net_lateral_force = abs(F_eng_x)
+    # Somma Vettoriale (Forza Netta)
+    F_net_vec = F_sx_newton + F_dx_newton
+    F_net_mag = np.linalg.norm(F_net_vec)
     
-    # Lateral Ratio: 1.0 = Tutti i motori spingono lateralmente (90/90) -> Skeg deve tenere.
-    # Lateral Ratio: 0.0 = Motori contrapposti o longitudinali (000/180) -> Skeg libero.
-    lateral_mode = 0.0
-    if total_thrust_avail > 1.0:
-        lateral_mode = net_lateral_force / total_thrust_avail
+    # Somma Scalare (Forza Totale "Spesa")
+    F_total_mag = np.linalg.norm(F_sx_newton) + np.linalg.norm(F_dx_newton)
+    
+    # --- CALCOLO COEFFICIENTI DI MANOVRA ---
+    
+    # Spin Factor: 1.0 se i motori spingono uno contro l'altro (Coppia Pura)
+    #              0.0 se spingono insieme (Traslazione/Avanzamento)
+    # Se F_net è basso ma F_total è alto, stiamo ruotando.
+    spin_factor = 0.0
+    if F_total_mag > 100.0:
+        spin_factor = 1.0 - (F_net_mag / F_total_mag)
+        spin_factor = np.clip(spin_factor, 0.0, 1.0)
+        # Rendiamo la curva più aggressiva: appena c'è un po' di spin, il fattore sale
+        spin_factor = spin_factor ** 0.5 
 
-    # Momento Motori su PP
+    # Lateral Factor: Quanta parte della forza netta è laterale (Crabbing)
+    lateral_factor = 0.0
+    if F_net_mag > 100.0:
+        lateral_factor = abs(F_net_vec[0]) / F_net_mag
+    
+    # Forze e Momenti Input
+    F_eng_x = F_net_vec[0]
+    F_eng_y = F_net_vec[1]
+    
     r_sx = pos_sx - pp_center
-    M_sx = r_sx[0] * (F_sx_vec[1] * 1000 * G_ACCEL) - r_sx[1] * (F_sx_vec[0] * 1000 * G_ACCEL)
+    M_sx = r_sx[0] * F_sx_newton[1] - r_sx[1] * F_sx_newton[0]
     r_dx = pos_dx - pp_center
-    M_dx = r_dx[0] * (F_dx_vec[1] * 1000 * G_ACCEL) - r_dx[1] * (F_dx_vec[0] * 1000 * G_ACCEL)
+    M_dx = r_dx[0] * F_dx_newton[1] - r_dx[1] * F_dx_newton[0]
     M_eng = M_sx + M_dx
 
     M_VIRT_X = MASS * 1.8  
@@ -140,25 +158,42 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         v_bow_sway = u + (r * Y_BOW_CP)     
         v_stern_sway = u + (r * Y_STERN_CP) 
         
-        # --- LOGICA SKEG V6.4 ---
-        # 1. Grip da Velocità (Surge): Più vai veloce, più lo skeg tiene.
+        # --- LOGICA "SKEG GRIP" DINAMICO ---
+        
+        # 1. Grip Base da Velocità (Avanzamento = Stabilità)
         surge_speed = abs(v)
-        grip_speed = 0.10 + 0.90 * np.clip(surge_speed / 2.5, 0.0, 1.0)
+        base_grip = 0.10 + 0.90 * np.clip(surge_speed / 2.0, 0.0, 1.0)
         
-        # 2. Grip da Spinta Laterale: Se spingi a 90°, lo skeg DEVE tenere anche da fermo.
-        grip_lateral = 0.90 * lateral_mode
+        # 2. Grip Laterale (Crabbing = Skeg deve tenere per fare da perno A)
+        # Se spingiamo lateralmente, attiviamo lo Skeg
+        lateral_grip = lateral_factor
         
-        # Il grip effettivo è il massimo dei due.
-        # Caso 90/90: grip_lateral è alto -> Skeg ON -> Pivot su A.
-        # Caso 000/180: grip_lateral è 0, grip_speed è basso -> Skeg OFF -> Pivot su B.
-        skeg_grip = max(grip_speed, grip_lateral)
+        # Grip preliminare (il massimo tra velocità e richiesta laterale)
+        current_grip = max(base_grip, lateral_grip)
         
+        # 3. PENALITÀ SPIN (Cruciale per Pivot B)
+        # Se stiamo facendo Spin (motori contrapposti), dobbiamo "uccidere" lo Skeg
+        # affinché la resistenza dominante diventi quella di Poppa (fissa),
+        # spostando il centro di rotazione indietro verso B.
+        if spin_factor > 0.6:
+            # Se spin factor è alto, riduciamo drasticamente il grip, 
+            # indipendentemente da tutto il resto.
+            penalty = (1.0 - spin_factor) * 0.1 # Diventa piccolissimo
+            current_grip *= penalty
+            # Assicuriamoci che non sia zero assoluto per stabilità numerica
+            current_grip = max(current_grip, 0.02)
+            
+        # Parametrizzazione resistenze
         F_drag_surge = -np.sign(v) * K_Y * (v**2)
         
-        # Resistenza Prua modulata dal Grip
-        F_drag_bow = -np.sign(v_bow_sway) * (K_X_BOW * skeg_grip) * (v_bow_sway**2)
+        # Resistenza Prua modulata
+        # Spin -> grip basso -> K_bow basso -> Pivot va verso Poppa (B)
+        # Crab -> grip alto -> K_bow alto -> Pivot va verso Prua (A)
+        F_drag_bow = -np.sign(v_bow_sway) * (K_X_BOW * current_grip) * (v_bow_sway**2)
         
+        # Resistenza Poppa (Costante, funge da ancora quando lo Skeg molla)
         F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
+        
         M_drag_rot = -np.sign(r) * K_W * (r**2)
         
         Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
