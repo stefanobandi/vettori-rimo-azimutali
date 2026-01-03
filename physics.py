@@ -2,8 +2,8 @@ import numpy as np
 import streamlit as st
 from constants import *
 
-# --- FUNZIONI DI MANOVRA ---
-
+# --- FUNZIONI DI MANOVRA (Invariate) ---
+# Copiamo le funzioni di input per non rompere l'interfaccia
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
@@ -89,97 +89,71 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V6.5 (Adaptive Logic) ---
+# --- FISICA SPERIMENTALE: "BRICK ON ICE" ---
+# Concetto: Il Pivot Point impostato dall'utente DIVENTA il Baricentro matematico.
+# Nessuna resistenza idrodinamica complessa. Solo F=ma e Torque=I*alpha.
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    pp_center = np.array([0.0, pp_y])
+    # IL CUORE DELL'IDEA:
+    # Definiamo che il centro di massa del sistema è ESATTAMENTE dove hai messo il Pivot Point.
+    # Quindi tutti i momenti sono calcolati rispetto a questo punto.
+    center_of_mass = np.array([0.0, pp_y])
     
+    # Forze in Newton
     F_sx_n = F_sx_vec * 1000 * G_ACCEL
     F_dx_n = F_dx_vec * 1000 * G_ACCEL
     
-    F_net_vec = F_sx_n + F_dx_n
-    F_net_mag = np.linalg.norm(F_net_vec)
-    F_total_power = np.linalg.norm(F_sx_n) + np.linalg.norm(F_dx_n)
+    # 1. Forza Risultante (Lineare)
+    # Questa sposta il mattone nello spazio
+    F_net = F_sx_n + F_dx_n
     
-    # Rilevamento Manovra
-    lateral_push_ratio = 0.0
-    if F_total_power > 100.0:
-        lateral_push_ratio = abs(F_net_vec[0]) / F_total_power
-        
-    spin_ratio = 0.0
-    if F_total_power > 100.0:
-        spin_ratio = 1.0 - (F_net_mag / F_total_power)
-        spin_ratio = np.clip(spin_ratio, 0.0, 1.0) ** 2.0 
-
-    F_eng_x = F_net_vec[0]
-    F_eng_y = F_net_vec[1]
-    
-    r_sx = pos_sx - pp_center
+    # 2. Momento Torcente (Rotazionale)
+    # Calcolato rigorosamente rispetto al Pivot Point (che ora è il CM)
+    r_sx = pos_sx - center_of_mass
     M_sx = r_sx[0] * F_sx_n[1] - r_sx[1] * F_sx_n[0]
-    r_dx = pos_dx - pp_center
-    M_dx = r_dx[0] * F_dx_n[1] - r_dx[1] * F_dx_n[0]
-    M_eng = M_sx + M_dx
-
-    M_VIRT_X = MASS * 1.8  
-    M_VIRT_Y = MASS * 1.1  
     
+    r_dx = pos_dx - center_of_mass
+    M_dx = r_dx[0] * F_dx_n[1] - r_dx[1] * F_dx_n[0]
+    
+    Total_Torque = M_sx + M_dx
+
+    # Parametri "Mattone"
+    MASS_BRICK = 700000.0  
+    INERTIA_BRICK = 80000000.0 
+    
+    # Stato Iniziale
     x, y, heading_deg = 0.0, 0.0, 0.0
     u, v, r = 0.0, 0.0, 0.0 
     
     results = []
     
     for i in range(n_total_steps):
-        v_bow_sway = u + (r * Y_BOW_CP)     
-        v_stern_sway = u + (r * Y_STERN_CP) 
         
-        # Logica V6.5
-        bow_drag_factor = 1.0
+        # Accelerazioni (Legge di Newton F=ma)
+        du = F_net[0] / MASS_BRICK
+        dv = F_net[1] / MASS_BRICK
+        dr = Total_Torque / INERTIA_BRICK
         
-        # Aumento resistenza se spinta laterale pura (Crabbing)
-        if lateral_push_ratio > 0.5:
-             bow_drag_factor = 1.0 + (lateral_push_ratio * 15.0) 
-        
-        # Diminuzione resistenza se Spin
-        if spin_ratio > 0.3:
-            reduction = 1.0 - spin_ratio
-            bow_drag_factor *= max(reduction, 0.05)
-            
-        surge_speed = abs(v)
-        speed_grip = 1.0 + np.clip(surge_speed / 2.0, 0.0, 4.0)
-        
-        if spin_ratio < 0.5:
-            bow_drag_factor *= speed_grip
-            
-        F_drag_surge = -np.sign(v) * K_Y * (v**2)
-        current_K_bow = K_X_BOW * bow_drag_factor
-        F_drag_bow = -np.sign(v_bow_sway) * current_K_bow * (v_bow_sway**2)
-        F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
-        M_drag_rot = -np.sign(r) * K_W * (r**2)
-        
-        Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
-        Sum_Fy = F_eng_y + F_drag_surge
-        
-        arm_bow = Y_BOW_CP - pp_y
-        arm_stern = Y_STERN_CP - pp_y
-        M_res_bow = F_drag_bow * arm_bow       
-        M_res_stern = F_drag_stern * arm_stern 
-        
-        Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
-        
-        du = Sum_Fx / M_VIRT_X
-        dv = Sum_Fy / M_VIRT_Y
-        dr = Sum_M / I_Z
-        
+        # Aggiornamento Velocità
         u += du * dt
         v += dv * dt
         r += dr * dt
         
+        # Attrito "Ghiaccio" (Damping lineare semplice)
+        # Serve solo a non far schizzare via il mattone all'infinito
+        u *= 0.95
+        v *= 0.95
+        r *= 0.90 # Frena la rotazione un po' di più
+        
+        # Integrazione Posizione
         rad = np.radians(heading_deg)
         cos_a, sin_a = np.cos(rad), np.sin(rad)
+        
+        # Ruotiamo il vettore velocità nel mondo
         dx_w = u * cos_a + v * sin_a 
         dy_w = -u * sin_a + v * cos_a
         
