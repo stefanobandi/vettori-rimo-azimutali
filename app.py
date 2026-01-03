@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.2", layout="wide")
+st.set_page_config(page_title="ASD Centurion V6.5", layout="wide")
 
 st.markdown("""
 <style>
@@ -37,8 +37,8 @@ st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' �
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> V6.2 (Dual Skeg FIX) | <b>Bollard Pull:</b> 70 ton <br>
-    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa) - Assi corretti
+    <b>Versione:</b> V6.5 (Adaptive Logic Restore) | <b>Bollard Pull:</b> 70 ton <br>
+    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa)
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -102,8 +102,6 @@ res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
 
 # --- CALCOLO MOMENTO RISPETTO AL PIVOT POINT (PP) ---
-# Momento = (Pos_Forza - Pos_PP) x Forza
-# Cross product 2D: r_x * F_y - r_y * F_x
 M_tm_PP = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
            (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm_PP * G_ACCEL
@@ -130,7 +128,6 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    # MODIFICA: Label "Pivot Point" senza "Target"
     with st.expander("📍 Pivot Point (Visual & Auto)", expanded=True):
         pcol1, pcol2 = st.columns(2)
         pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
@@ -185,7 +182,6 @@ with col_c:
     
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Pivot Point")
     
-    # Visualizza momento curvato (usando il momento PP)
     if abs(M_tm_PP) > 1:
         p_s, p_e = (5, 24) if M_tm_PP > 0 else (-5, 24), (-5, 24) if M_tm_PP > 0 else (5, 24)
         ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_PP>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
@@ -213,7 +209,6 @@ with col_c:
         ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
         ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
     else:
-        # Default view
         ax.set_xlim(-30, 30)
         ax.set_ylim(-40, 35)
         
@@ -224,7 +219,7 @@ with col_c:
     if show_prediction:
         st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
 
-# --- TABELLA RIEPILOGATIVA FINALE ---
+# --- TABELLA RIEPILOGATIVA ---
 st.write("---")
 st.subheader("📋 Telemetria di Manovra")
 
@@ -234,7 +229,6 @@ with c_data1:
 with c_data2:
     st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
 with c_data3:
-    # MODIFICA: Label MOMENTO (PP)
     st.metric("Momento (PP)", f"{int(M_tm_PP)} t*m", delta_color="off")
 with c_data4:
     st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
