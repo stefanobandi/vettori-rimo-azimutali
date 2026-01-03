@@ -2,10 +2,10 @@ import numpy as np
 import streamlit as st
 from constants import *
 
-# --- FUNZIONI DI MANOVRA (LOGICA PULSANTI) ---
+# --- FUNZIONI DI MANOVRA ---
 
 def apply_slow_side_step(direction):
-    """Configura i motori per una traslazione laterale lenta (Slow Side Step)."""
+    """Slow Side Step: Calcola angoli per convergere sul PP."""
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
     dist_x_calcolo = POS_THRUSTERS_X 
@@ -26,7 +26,7 @@ def apply_slow_side_step(direction):
         st.error(f"Errore calcolo Slow: {e}")
 
 def apply_fast_side_step(direction):
-    """Configura i motori per una traslazione laterale aggressiva (Fast Side Step)."""
+    """Fast Side Step: Drive & Slave logic."""
     pp_y = st.session_state.pp_y
     dist_y = pp_y - POS_THRUSTERS_Y 
     try:
@@ -95,12 +95,13 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA V6.5: Intelligent Pivot Shifting ---
+# --- FISICA V6.5: ADAPTIVE SKEG BEHAVIOR ---
 
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
     """
-    Simulazione Fisica con gestione avanzata del Pivot Point.
-    Distingue tra manovra di coppia (Pivot B) e manovra laterale (Pivot A).
+    Gestisce i 2 Pivot Point naturali:
+    1. Pivot A (Skeg): Attivo in avanzamento o spinta laterale (90/90).
+    2. Pivot B (Poppa): Attivo in rotazione pura (0/180).
     """
     dt = 0.2
     n_total_steps = int(total_time / dt)
@@ -108,42 +109,40 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     
     pp_center = np.array([0.0, pp_y])
     
-    # 1. Analisi Forze Motori
-    F_sx_newton = F_sx_vec * 1000 * G_ACCEL
-    F_dx_newton = F_dx_vec * 1000 * G_ACCEL
+    # Forze Newton
+    F_sx_n = F_sx_vec * 1000 * G_ACCEL
+    F_dx_n = F_dx_vec * 1000 * G_ACCEL
     
-    # Somma Vettoriale (Forza Netta)
-    F_net_vec = F_sx_newton + F_dx_newton
+    # Analisi Vettoriale della Manovra
+    F_net_vec = F_sx_n + F_dx_n
     F_net_mag = np.linalg.norm(F_net_vec)
+    F_total_power = np.linalg.norm(F_sx_n) + np.linalg.norm(F_dx_n)
     
-    # Somma Scalare (Forza Totale "Spesa")
-    F_total_mag = np.linalg.norm(F_sx_newton) + np.linalg.norm(F_dx_newton)
+    # --- RILEVAMENTO MANOVRA ---
     
-    # --- CALCOLO COEFFICIENTI DI MANOVRA ---
-    
-    # Spin Factor: 1.0 se i motori spingono uno contro l'altro (Coppia Pura)
-    #              0.0 se spingono insieme (Traslazione/Avanzamento)
-    # Se F_net è basso ma F_total è alto, stiamo ruotando.
-    spin_factor = 0.0
-    if F_total_mag > 100.0:
-        spin_factor = 1.0 - (F_net_mag / F_total_mag)
-        spin_factor = np.clip(spin_factor, 0.0, 1.0)
-        # Rendiamo la curva più aggressiva: appena c'è un po' di spin, il fattore sale
-        spin_factor = spin_factor ** 0.5 
+    # 1. Spinta Laterale (Crabbing Force)
+    # Se entrambi i motori spingono lateralmente dalla stessa parte, questo valore è alto.
+    # Usiamo la componente X della forza netta.
+    lateral_push_ratio = 0.0
+    if F_total_power > 100.0:
+        lateral_push_ratio = abs(F_net_vec[0]) / F_total_power
+        
+    # 2. Spinta Rotazionale (Spin Force)
+    # Se la forza netta è bassa ma la potenza totale è alta, stiamo ruotando (motori contrapposti).
+    spin_ratio = 0.0
+    if F_total_power > 100.0:
+        spin_ratio = 1.0 - (F_net_mag / F_total_power)
+        # Rendiamo la transizione nitida
+        spin_ratio = np.clip(spin_ratio, 0.0, 1.0) ** 2.0 
 
-    # Lateral Factor: Quanta parte della forza netta è laterale (Crabbing)
-    lateral_factor = 0.0
-    if F_net_mag > 100.0:
-        lateral_factor = abs(F_net_vec[0]) / F_net_mag
-    
-    # Forze e Momenti Input
+    # Calcolo Momenti Input
     F_eng_x = F_net_vec[0]
     F_eng_y = F_net_vec[1]
     
     r_sx = pos_sx - pp_center
-    M_sx = r_sx[0] * F_sx_newton[1] - r_sx[1] * F_sx_newton[0]
+    M_sx = r_sx[0] * F_sx_n[1] - r_sx[1] * F_sx_n[0]
     r_dx = pos_dx - pp_center
-    M_dx = r_dx[0] * F_dx_newton[1] - r_dx[1] * F_dx_newton[0]
+    M_dx = r_dx[0] * F_dx_n[1] - r_dx[1] * F_dx_n[0]
     M_eng = M_sx + M_dx
 
     M_VIRT_X = MASS * 1.8  
@@ -158,47 +157,52 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         v_bow_sway = u + (r * Y_BOW_CP)     
         v_stern_sway = u + (r * Y_STERN_CP) 
         
-        # --- LOGICA "SKEG GRIP" DINAMICO ---
+        # --- LOGICA ADATTIVA SKEG (Il Cuore della V6.5) ---
         
-        # 1. Grip Base da Velocità (Avanzamento = Stabilità)
-        surge_speed = abs(v)
-        base_grip = 0.10 + 0.90 * np.clip(surge_speed / 2.0, 0.0, 1.0)
+        # Modulatore della resistenza di Prua (K_X_BOW)
+        bow_drag_factor = 1.0
         
-        # 2. Grip Laterale (Crabbing = Skeg deve tenere per fare da perno A)
-        # Se spingiamo lateralmente, attiviamo lo Skeg
-        lateral_grip = lateral_factor
+        # CASO A: SPINTA LATERALE (90/90) -> PIVOT A
+        # La prua deve essere un muro. Moltiplichiamo la resistenza x10.
+        # Questo blocca la prua e costringe la poppa a ruotare attorno ad essa.
+        if lateral_push_ratio > 0.5:
+             bow_drag_factor = 1.0 + (lateral_push_ratio * 15.0) 
         
-        # Grip preliminare (il massimo tra velocità e richiesta laterale)
-        current_grip = max(base_grip, lateral_grip)
-        
-        # 3. PENALITÀ SPIN (Cruciale per Pivot B)
-        # Se stiamo facendo Spin (motori contrapposti), dobbiamo "uccidere" lo Skeg
-        # affinché la resistenza dominante diventi quella di Poppa (fissa),
-        # spostando il centro di rotazione indietro verso B.
-        if spin_factor > 0.6:
-            # Se spin factor è alto, riduciamo drasticamente il grip, 
-            # indipendentemente da tutto il resto.
-            penalty = (1.0 - spin_factor) * 0.1 # Diventa piccolissimo
-            current_grip *= penalty
-            # Assicuriamoci che non sia zero assoluto per stabilità numerica
-            current_grip = max(current_grip, 0.02)
+        # CASO B: SPIN PURO (0/180) -> PIVOT B
+        # La prua deve spazzolare l'acqua. Dividiamo la resistenza drasticamente.
+        # Se stiamo girando, la prua non deve opporsi.
+        if spin_ratio > 0.3:
+            # Più è puro lo spin, più la prua diventa "trasparente"
+            # Scende fino a 0.05 del valore nominale
+            reduction = 1.0 - spin_ratio
+            bow_drag_factor *= max(reduction, 0.05)
             
-        # Parametrizzazione resistenze
+        # CASO C: AVANZAMENTO (Grip Velocità)
+        # Se c'è velocità longitudinale, lo skeg tiene (effetto timone).
+        surge_speed = abs(v)
+        speed_grip = 1.0 + np.clip(surge_speed / 2.0, 0.0, 4.0)
+        
+        # Applichiamo il fattore velocità solo se non stiamo facendo spin da fermo
+        if spin_ratio < 0.5:
+            bow_drag_factor *= speed_grip
+            
+        # Calcolo Forze Resistenti
         F_drag_surge = -np.sign(v) * K_Y * (v**2)
         
-        # Resistenza Prua modulata
-        # Spin -> grip basso -> K_bow basso -> Pivot va verso Poppa (B)
-        # Crab -> grip alto -> K_bow alto -> Pivot va verso Prua (A)
-        F_drag_bow = -np.sign(v_bow_sway) * (K_X_BOW * current_grip) * (v_bow_sway**2)
+        # Resistenza PRUA (Dinamica)
+        current_K_bow = K_X_BOW * bow_drag_factor
+        F_drag_bow = -np.sign(v_bow_sway) * current_K_bow * (v_bow_sway**2)
         
-        # Resistenza Poppa (Costante, funge da ancora quando lo Skeg molla)
+        # Resistenza POPPA (Statica - funge da perno in Spin)
         F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
         
         M_drag_rot = -np.sign(r) * K_W * (r**2)
         
+        # Somma Forze
         Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
         Sum_Fy = F_eng_y + F_drag_surge
         
+        # Somma Momenti (con bracci dal PP attuale)
         arm_bow = Y_BOW_CP - pp_y
         arm_stern = Y_STERN_CP - pp_y
         M_res_bow = F_drag_bow * arm_bow       
@@ -206,6 +210,7 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
         
         Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
         
+        # Integrazione
         du = Sum_Fx / M_VIRT_X
         dv = Sum_Fy / M_VIRT_Y
         dr = Sum_M / I_Z
