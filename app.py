@@ -47,10 +47,9 @@ with st.sidebar:
     st.header("Comandi Globali")
     c1, c2 = st.columns(2)
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    c2.button("Reset Target PP", on_click=reset_pivot, use_container_width=True)
+    c2.button("Reset PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    # MODIFICA: Predizione disattivata di default
     show_prediction = st.checkbox("Predizione Movimento (30s) - beta -", value=False)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
@@ -101,9 +100,13 @@ ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
 res_ton = np.sqrt(res_u**2 + res_v**2)
 direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
-M_tm_CG = ((pos_sx-cg_pos)[0]*F_sx_eff[1] - (pos_sx-cg_pos)[1]*F_sx_eff[0] + 
-           (pos_dx-cg_pos)[0]*F_dx_eff[1] - (pos_dx-cg_pos)[1]*F_dx_eff[0])
-M_knm = M_tm_CG * G_ACCEL
+
+# --- CALCOLO MOMENTO RISPETTO AL PIVOT POINT (PP) ---
+# Momento = (Pos_Forza - Pos_PP) x Forza
+# Cross product 2D: r_x * F_y - r_y * F_x
+M_tm_PP = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
+           (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
+M_knm = M_tm_PP * G_ACCEL
 
 # Calcolo intersezione vettori
 inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
@@ -127,7 +130,8 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    with st.expander("📍 Target Pivot Point (Visual & Auto)", expanded=True):
+    # MODIFICA: Label "Pivot Point" senza "Target"
+    with st.expander("📍 Pivot Point (Visual & Auto)", expanded=True):
         pcol1, pcol2 = st.columns(2)
         pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
         pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x", format="%.2fm")
@@ -179,11 +183,12 @@ with col_c:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
     
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Target PP")
+    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Pivot Point")
     
-    if abs(M_tm_CG) > 1:
-        p_s, p_e = (5, 24) if M_tm_CG > 0 else (-5, 24), (-5, 24) if M_tm_CG > 0 else (5, 24)
-        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_CG>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
+    # Visualizza momento curvato (usando il momento PP)
+    if abs(M_tm_PP) > 1:
+        p_s, p_e = (5, 24) if M_tm_PP > 0 else (-5, 24), (-5, 24) if M_tm_PP > 0 else (5, 24)
+        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_PP>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
     
     # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
     if show_prediction and len(traj) > 0:
@@ -229,7 +234,8 @@ with c_data1:
 with c_data2:
     st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
 with c_data3:
-    st.metric("Momento (CG)", f"{int(M_tm_CG)} t*m", delta_color="off")
+    # MODIFICA: Label MOMENTO (PP)
+    st.metric("Momento (PP)", f"{int(M_tm_PP)} t*m", delta_color="off")
 with c_data4:
     st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
 
