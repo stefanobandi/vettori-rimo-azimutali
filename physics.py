@@ -55,7 +55,7 @@ def apply_fast_side_step(direction):
             
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
             
-            # Gestione potenza negativa: Inverti spinta (Pull instead of Push)
+            # Gestione potenza negativa
             if p_slave < 0:
                 p_slave = abs(p_slave)
                 a_slave = (a_slave + 180) % 360
@@ -66,7 +66,7 @@ def apply_fast_side_step(direction):
                 st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
                 
         else: # SINISTRA
-            # Drive (DX) spinge a 315° (Front-Left), Slave (SX) compensa
+            # Drive (DX) spinge a 315°, Slave (SX) compensa
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
             
@@ -76,12 +76,12 @@ def apply_fast_side_step(direction):
             if abs(dy) < 0.01: return
             a_slave = np.degrees(np.arctan2(dx, dy)) % 360
             
-            denom = np.cos(np.radians(a_slave))
+            denom = np.cos(np.radians(a_drive))
             if abs(denom) < 0.001: return
             
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
             
-            # Gestione potenza negativa: Inverti spinta
+            # Gestione potenza negativa
             if p_slave < 0:
                 p_slave = abs(p_slave)
                 a_slave = (a_slave + 180) % 360
@@ -144,112 +144,93 @@ def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0
     record_every = max(1, n_total_steps // steps)
     
     # Parametri geometrici
-    center_B = np.array([0.0, POS_THRUSTERS_Y]) 
+    # Pivot Point Center per i momenti (non più 0,0 ma pp_y)
+    pp_center = np.array([0.0, pp_y])
     
     # 1. Input Forze Motori (in Newton)
-    # Convertiamo tonnellate in Newton
-    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL # Totale Laterale (Sway force)
-    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL # Totale Longitudinale (Surge force)
+    F_eng_x = (F_sx_vec[0] + F_dx_vec[0]) * 1000 * G_ACCEL 
+    F_eng_y = (F_sx_vec[1] + F_dx_vec[1]) * 1000 * G_ACCEL 
     
-    # Calcolo Momento Motori (Torque) rispetto al CG (0,0)
-    # Cross product 2D: x*Fy - y*Fx
-    M_eng = (pos_sx[0] * F_sx_vec[1] - pos_sx[1] * F_sx_vec[0]) + \
-            (pos_dx[0] * F_dx_vec[1] - pos_dx[1] * F_dx_vec[0])
-    M_eng = M_eng * 1000 * G_ACCEL
+    # Calcolo Momento Motori (Torque) rispetto al PP (0, pp_y)
+    # Braccio leva = Posizione_Motore - Posizione_PP
+    # Cross product 2D: r_x * F_y - r_y * F_x
+    
+    # Motore SX
+    r_sx = pos_sx - pp_center
+    M_sx = r_sx[0] * (F_sx_vec[1] * 1000 * G_ACCEL) - r_sx[1] * (F_sx_vec[0] * 1000 * G_ACCEL)
+    
+    # Motore DX
+    r_dx = pos_dx - pp_center
+    M_dx = r_dx[0] * (F_dx_vec[1] * 1000 * G_ACCEL) - r_dx[1] * (F_dx_vec[0] * 1000 * G_ACCEL)
+    
+    M_eng = M_sx + M_dx
 
-    # Masse inerziali (Virtual Mass include acqua trascinata)
-    M_VIRT_X = MASS * 1.8  # Massa per Sway (Laterale) -> Alta inerzia laterale
-    M_VIRT_Y = MASS * 1.1  # Massa per Surge (Longitudinale) -> Bassa inerzia longitudinale
+    # Masse inerziali (Virtual Mass)
+    M_VIRT_X = MASS * 1.8  
+    M_VIRT_Y = MASS * 1.1  
     
     # Stato Iniziale (Velocità nel sistema nave locale)
     x, y, heading_deg = 0.0, 0.0, 0.0
-    u = 0.0 # Sway velocity (Laterale, X) - positivo a destra
-    v = 0.0 # Surge velocity (Longitudinale, Y) - positivo avanti
-    r = 0.0 # Yaw rate (Velocità angolare) - radianti/sec
+    u = 0.0 
+    v = 0.0 
+    r = 0.0 
     
     results = []
     
     for i in range(n_total_steps):
         
         # --- CALCOLO VELOCITÀ LATERALI LOCALI (SWAY) ---
-        # La velocità laterale varia lungo lo scafo a causa della rotazione.
-        # v_point = u + r * x_point (ma qui usiamo coordinate navali Y lungo l'asse)
-        v_bow_sway = u + (r * Y_BOW_CP)     # Velocità laterale allo Skeg
-        v_stern_sway = u + (r * Y_STERN_CP) # Velocità laterale a Poppa
+        v_bow_sway = u + (r * Y_BOW_CP)     
+        v_stern_sway = u + (r * Y_STERN_CP) 
         
         # --- FORZE IDRODINAMICHE (DAMPING & LIFT) ---
         
         # 1. Fattore "Presa" dello Skeg (Dynamic Skeg Logic)
-        # Lo Skeg lavora come un'ala: ha bisogno di velocità longitudinale (v) per generare Lift.
-        # Se v è zero (Statico), lo Skeg stalla e offre meno resistenza relativa, permettendo
-        # ai motori di dominare la rotazione (Pivot su B).
-        # Se v è alto (Avanzamento), lo Skeg blocca la prua (Pivot su A).
-        
         surge_speed = abs(v)
-        # Rampa sigmoidale: 0.15 a fermo -> 1.0 a 2.5 m/s (~5 nodi)
-        # Valore base 0.15 necessario per stabilità in Crabbing (Scenario C)
         skeg_grip = 0.15 + 0.85 * np.clip(surge_speed / 2.5, 0.0, 1.0)
         
-        # 2. Resistenza Longitudinale (Surge Drag)
+        # 2. Resistenze
         F_drag_surge = -np.sign(v) * K_Y * (v**2)
-        
-        # 3. Resistenza Laterale PRUA (Skeg)
-        # Modulata da skeg_grip. In rotazione pura (v=0), K_X_BOW scende drasticamente.
         F_drag_bow = -np.sign(v_bow_sway) * (K_X_BOW * skeg_grip) * (v_bow_sway**2)
-        
-        # 4. Resistenza Laterale POPPA (Scafo)
-        # Costante, simula la resistenza di forma della poppa.
         F_drag_stern = -np.sign(v_stern_sway) * K_X_STERN * (v_stern_sway**2)
-        
-        # 5. Resistenza Rotazionale Pura (Damping angolare dell'acqua)
         M_drag_rot = -np.sign(r) * K_W * (r**2)
         
         # --- SOMMA FORZE E MOMENTI (Local Frame) ---
         
-        # Totale Sway (X) = Spinta Motori X + Resistenze Laterali
         Sum_Fx = F_eng_x + F_drag_bow + F_drag_stern
-        
-        # Totale Surge (Y) = Spinta Motori Y + Resistenza Longitudinale
         Sum_Fy = F_eng_y + F_drag_surge
         
-        # Totale Momento (Torque)
-        # Le resistenze laterali creano momento in base alla loro distanza dal CG (0,0)
-        M_res_bow = F_drag_bow * Y_BOW_CP       # Forza Prua * Braccio Prua (+13)
-        M_res_stern = F_drag_stern * Y_STERN_CP # Forza Poppa * Braccio Poppa (-11)
+        # Totale Momento (Torque) rispetto al PP
+        # Bracci di leva per le resistenze (Pos_CP - Pos_PP)
+        
+        arm_bow = Y_BOW_CP - pp_y
+        arm_stern = Y_STERN_CP - pp_y
+        
+        M_res_bow = F_drag_bow * arm_bow       
+        M_res_stern = F_drag_stern * arm_stern 
         
         Sum_M = M_eng + M_res_bow + M_res_stern + M_drag_rot
         
         # --- INTEGRAZIONE NEWTONIANA (Eulero) ---
-        
-        # Accelerazioni
         du = Sum_Fx / M_VIRT_X
         dv = Sum_Fy / M_VIRT_Y
         dr = Sum_M / I_Z
         
-        # Aggiornamento Velocità
         u += du * dt
         v += dv * dt
         r += dr * dt
         
-        # Integrazione Posizione nel Mondo (Global Frame)
-        # Ruotiamo le velocità locali (u,v) nell'orientamento attuale della nave
-        # Convenzione: Y = Prua (Heading), X = Dritta
+        # Integrazione Posizione nel Mondo
         rad = np.radians(heading_deg)
         cos_a = np.cos(rad)
         sin_a = np.sin(rad)
-        
-        # Trasformazione velocità locali -> globali
-        # Velocità Est (World X) = u*cos(th) + v*sin(th)
-        # Velocità Nord (World Y) = -u*sin(th) + v*cos(th)
-        # NOTA: In matplotlib grafico, Y è su, X è destra. 0 gradi = Su (Y+).
-        # u (sway) è laterale (DX), v (surge) è longitudinale (UP).
         
         dx_w = u * cos_a + v * sin_a 
         dy_w = -u * sin_a + v * cos_a
         
         x += dx_w * dt
         y += dy_w * dt
-        heading_deg -= np.degrees(r * dt) # Rotazione oraria negativa nel piano cartesiano std
+        heading_deg -= np.degrees(r * dt) 
         
         if i % record_every == 0:
             results.append((x, y, heading_deg))
