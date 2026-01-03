@@ -76,7 +76,8 @@ def apply_fast_side_step(direction):
             if abs(dy) < 0.01: return
             a_slave = np.degrees(np.arctan2(dx, dy)) % 360
             
-            denom = np.cos(np.radians(a_drive))
+            # FIX: Denominatore corretto (era a_drive, ora a_slave)
+            denom = np.cos(np.radians(a_slave))
             if abs(denom) < 0.001: return
             
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
