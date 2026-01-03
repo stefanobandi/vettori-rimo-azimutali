@@ -55,13 +55,18 @@ def apply_fast_side_step(direction):
             
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
             
+            # Gestione potenza negativa: Inverti spinta (Pull instead of Push)
+            if p_slave < 0:
+                p_slave = abs(p_slave)
+                a_slave = (a_slave + 180) % 360
+
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a1, st.session_state.p1 = int(a_drive), int(p_drive)
                 st.session_state.a2, st.session_state.p2 = int(round(a_slave)), int(round(p_slave))
                 st.toast(f"Fast Dritta: Slave {int(round(p_slave))}%", icon="⚡")
                 
         else: # SINISTRA
-            # Drive (DX) spinge a 315°, Slave (SX) compensa
+            # Drive (DX) spinge a 315° (Front-Left), Slave (SX) compensa
             a_drive, p_drive = 315.0, 50.0
             x_drive, x_slave = POS_THRUSTERS_X, -POS_THRUSTERS_X
             
@@ -71,10 +76,15 @@ def apply_fast_side_step(direction):
             if abs(dy) < 0.01: return
             a_slave = np.degrees(np.arctan2(dx, dy)) % 360
             
-            denom = np.cos(np.radians(a_drive))
+            denom = np.cos(np.radians(a_slave))
             if abs(denom) < 0.001: return
             
             p_slave = -(p_drive * np.cos(np.radians(a_drive))) / denom
+            
+            # Gestione potenza negativa: Inverti spinta
+            if p_slave < 0:
+                p_slave = abs(p_slave)
+                a_slave = (a_slave + 180) % 360
             
             if 1.0 <= p_slave <= 100.0:
                 st.session_state.a2, st.session_state.p2 = int(a_drive), int(p_drive)
