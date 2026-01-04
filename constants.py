@@ -2,13 +2,16 @@ import numpy as np
 
 # --- DIMENSIONI & GEOMETRIA ---
 G_ACCEL = 9.80665
+
+# Posizione Propulsori (Rispetto al centro nave geometrico 0,0)
+# Confermati dai tuoi dati: Y=-12.00, X=2.70
 POS_THRUSTERS_Y = -12.0
 POS_THRUSTERS_X = 2.7
 BOLLARD_PULL_PER_ENGINE = 35.0 
 
-# Dati Nave (Visualizzazione & UI)
-SHIP_LENGTH = 28.0
-SHIP_WIDTH = 11.0
+# Dati Nave Reali (Aggiornati)
+SHIP_LENGTH = 32.50
+SHIP_WIDTH = 11.70
 
 # --- FISICA "BRICK ON ICE" (Experimental V6.60) ---
 MASS = 800000.0          # kg (Dislocamento + Massa aggiunta)
