@@ -88,96 +88,83 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA: BRICK ON ICE + DAMPING ---
-def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
+# --- FISICA: BRICK ON ICE V2 (Body Frame Integration) ---
+def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=30.0, steps=20):
     """
-    Simula il movimento considerando il PP come Baricentro.
-    Include Damping (Attrito Viscoso) per simulare l'acqua.
+    Simula il moto integrando nel sistema di riferimento della nave (Body Frame).
+    Questo assicura che se la nave ruota, le forze dei motori ruotino con essa.
     """
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # 1. Definiamo il Baricentro (CM) coincidente col Pivot Point
-    center_of_mass = np.array([0.0, pp_y])
+    # Stato Iniziale (Body Frame)
+    # u = Surge velocity (avanti/indietro, asse Y nave)
+    # v = Sway velocity (laterale, asse X nave)
+    # r = Yaw rate (velocità di rotazione)
+    u, v, r = 0.0, 0.0, 0.0
     
-    # 2. Conversione forze in Newton
-    F_sx_n = F_sx_vec * 1000 * G_ACCEL
-    F_dx_n = F_dx_vec * 1000 * G_ACCEL
-    
-    # 3. Calcolo Momenti (Torque) rispetto al CM (che è il PP)
-    # Braccio di leva = Posizione Thruster - Posizione PP
-    r_sx = pos_sx - center_of_mass
-    r_dx = pos_dx - center_of_mass
-    
-    # Momento = r_x * F_y - r_y * F_x (Prodotto vettoriale 2D)
-    M_sx = r_sx[0] * F_sx_n[1] - r_sx[1] * F_sx_n[0]
-    M_dx = r_dx[0] * F_dx_n[1] - r_dx[1] * F_dx_n[0]
-    
-    Torque_Total = M_sx + M_dx
-    Force_Total = F_sx_n + F_dx_n
-    
-    # Stato Iniziale (Locale allo scafo)
-    # u = surge velocity (avanti/indietro), v = sway velocity (laterale), r = yaw rate
-    u, v, r_rate = 0.0, 0.0, 0.0 
-    
-    # Stato Globale (Mondo)
+    # Stato Globale (World Frame)
     x_world, y_world, head_world = 0.0, 0.0, 0.0
     
     results = []
     
     for i in range(n_total_steps):
-        # A. Calcolo Resistenze (Damping Idrodinamico)
-        # Resistenza proporzionale alla velocità (Viscosità lineare per stabilità)
-        # F_drag = -Coeff * Vel
-        Drag_X = -DAMP_LINEAR_X * v
-        Drag_Y = -DAMP_LINEAR_Y * u
-        Drag_M = -DAMP_ANGULAR * r_rate
         
-        # B. Somma Forze e Momenti
-        F_tot_x_local = Force_Total[0] + Drag_X # Nota: F[0] è X (sway) nel setup attuale
-        F_tot_y_local = Force_Total[1] + Drag_Y # Nota: F[1] è Y (surge)
-        M_tot_local   = Torque_Total + Drag_M
+        # 1. Calcolo Resistenze (Damping) nel Body Frame
+        # L'acqua si oppone al movimento relativo dello scafo
+        F_drag_surge = -DAMP_LINEAR_Y * u
+        F_drag_sway  = -DAMP_LINEAR_X * v
+        M_drag_yaw   = -DAMP_ANGULAR * r
         
-        # C. Legge di Newton (F=ma => a=F/m)
-        acc_u = F_tot_y_local / MASS
-        acc_v = F_tot_x_local / MASS
-        acc_r = M_tot_local / INERTIA
+        # 2. Somma Forze Totali (Motori + Resistenza)
+        F_tot_surge = total_surge_n + F_drag_surge
+        F_tot_sway  = total_sway_n + F_drag_sway
+        M_tot_yaw   = total_torque_nm + M_drag_yaw
         
-        # D. Integrazione Velocità
+        # 3. Legge di Newton (Acc = F/m)
+        acc_u = F_tot_surge / MASS
+        acc_v = F_tot_sway / MASS
+        acc_r = M_tot_yaw / INERTIA
+        
+        # 4. Integrazione Velocità (Nuove velocità relative allo scafo)
         u += acc_u * dt
         v += acc_v * dt
-        r_rate += acc_r * dt
+        r += acc_r * dt
         
-        # E. Integrazione Posizione (Rotazione nel mondo)
-        rad = np.radians(head_world)
-        cos_a, sin_a = np.cos(rad), np.sin(rad)
+        # 5. Conversione Velocità da Body Frame a World Frame
+        # Ruotiamo il vettore velocità (v, u) dell'angolo di heading corrente
+        # Nota: Matplotlib 0° è Nord (Y), rotazione oraria negativa.
+        # Ma qui usiamo matematica standard: 0° = Nord, +90° = Est (se coerente con app.py)
         
-        # Velocità nel sistema mondo
-        # u è lungo l'asse Y della nave, v è lungo l'asse X della nave
-        vel_x_world = v * cos_a + u * sin_a  # Attenzione: definizione assi scafo vs mondo
-        vel_y_world = -v * sin_a + u * cos_a # u punta verso l'alto (Y), v verso dx (X)
+        rad_h = np.radians(head_world)
         
-        # Correzione assi standard marittimi vs Matplotlib:
-        # In questo progetto: Y è la prua (Longitudinale), X è destra.
-        # Matplotlib 0 deg è Nord (Y).
-        dx_w = v * np.cos(rad) + u * np.sin(rad) # X locale proiettato
-        dy_w = -v * np.sin(rad) + u * np.cos(rad) # Y locale proiettato
+        # Matrice di rotazione per portare (v, u) nel mondo
+        # v è laterale (X locale), u è longitudinale (Y locale)
+        # Se heading = 0: dx = v, dy = u
+        # Se heading = 90 (Est): dx = u, dy = -v (dipende dalla convenzione, verifichiamo empiricamente)
+        # Convenzione Navale standard: 
+        # Vel_X_World = u * sin(H) + v * cos(H)  (Se H è azimut 0=N, 90=E)
+        # Vel_Y_World = u * cos(H) - v * sin(H)
         
-        # Semplificazione per visualizzazione diretta (Assumendo start a 0 deg)
-        # Se la nave ruota, il vettore velocità nel mondo cambia direzione.
-        # Qui usiamo una matrice di rotazione standard 2D.
-        # V_world = R * V_local
-        # | dx |   | cos -sin | | v | (v è x locale)
-        # | dy | = | sin  cos | | u | (u è y locale)
-        # Verifica: se heading=0, dx=v, dy=u. Corretto.
+        # Usiamo rotazione trigonometrica standard su app.py (0=Y, 90=X)
+        # X_world = X_loc * cos(theta) - Y_loc * sin(theta) ? No, troppo complicato.
+        # Semplice proiezione:
+        # Vettore velocità locale V_loc = [v, u] (x, y)
+        # Ruotiamo V_loc di -head_world (perché app usa angoli orari come positivi o negativi? verifichiamo)
+        # In app.py: sin(rad) è X, cos(rad) è Y. 
         
-        dx_w = v * np.cos(rad) - u * np.sin(rad)
-        dy_w = v * np.sin(rad) + u * np.cos(rad)
-
-        x_world += dx_w * dt
-        y_world += dy_w * dt
-        head_world -= np.degrees(r_rate * dt) # Matplotlib ruota in senso orario negativo per visual
+        cos_h = np.cos(rad_h)
+        sin_h = np.sin(rad_h)
+        
+        # Proiezione corretta per il sistema visivo di App.py
+        vx_world = v * cos_h + u * sin_h
+        vy_world = -v * sin_h + u * cos_h
+        
+        # 6. Integrazione Posizione
+        x_world += vx_world * dt
+        y_world += vy_world * dt
+        head_world += np.degrees(r * dt) # Yaw rate positiva = rotazione oraria (DX)
         
         if i % record_every == 0:
             results.append((x_world, y_world, head_world))
