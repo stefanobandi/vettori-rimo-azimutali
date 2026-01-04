@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.5", layout="wide")
+st.set_page_config(page_title="ASD Centurion Experimental", layout="wide")
 
 st.markdown("""
 <style>
@@ -33,12 +33,11 @@ def set_engine_state(p1, a1, p2, a2):
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
-st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD 'CENTURION' ⚓</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion - Experimental Brick ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> V6.5 (Adaptive Logic Restore) | <b>Bollard Pull:</b> 70 ton <br>
-    <b>Fisica:</b> Punti di resistenza differenziati (Skeg Prua vs Scafo Poppa)
+    <b>Versione:</b> Experimental BOI (Brick on Ice) | <b>Bollard Pull:</b> 70 ton <br>
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -49,8 +48,8 @@ with st.sidebar:
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
     c2.button("Reset PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
-    show_wash = st.checkbox("Visualizza Scia (Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (30s) - beta -", value=False)
+    show_wash = st.checkbox("Visualizza Scia (Propeller Wash)", value=True)
+    show_prediction = st.checkbox("Predizione Movimento (30s - logica BOI) -Beta-", value=False)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
