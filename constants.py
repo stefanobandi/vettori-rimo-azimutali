@@ -11,13 +11,10 @@ SHIP_LENGTH = 28.0
 SHIP_WIDTH = 11.0
 
 # --- FISICA "BRICK ON ICE" (Experimental V6.60) ---
-# Calibrazione per ASD
 MASS = 800000.0          # kg (Dislocamento + Massa aggiunta)
-INERTIA = 120000000.0    # kg*m^2 (Inerzia aumentata per movimenti più maestosi)
+INERTIA = 100000000.0    # kg*m^2 (Inerzia aumentata per evitare spin troppo rapidi)
 
 # --- DAMPING (Freno Idrodinamico) ---
-# Resistenza proporzionale alla velocità (Viscosità)
-# Impedisce alla nave di accelerare all'infinito
-DAMP_LINEAR_X = 25000.0  # Freno laterale (Scarroccio) - Più alto perché lo scafo fa muro
-DAMP_LINEAR_Y = 8000.0   # Freno longitudinale (Avanzamento) - Più basso, scafo idrodinamico
-DAMP_ANGULAR = 40000000.0 # Freno rotazionale - Fondamentale per fermare la trottola
+DAMP_LINEAR_X = 30000.0  # Freno laterale aumentato (Scafo fa muro)
+DAMP_LINEAR_Y = 8000.0   # Freno longitudinale (Avanzamento idrodinamico)
+DAMP_ANGULAR = 50000000.0 # Freno rotazionale elevato per stabilità
