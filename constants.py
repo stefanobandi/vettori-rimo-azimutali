@@ -6,21 +6,15 @@ POS_THRUSTERS_Y = -12.0
 POS_THRUSTERS_X = 2.7
 BOLLARD_PULL_PER_ENGINE = 35.0 
 
-# --- FISICA V6.5 ---
-MASS = 700000.0 
+# --- FISICA "BRICK ON ICE" (Experimental) ---
+# Calibrazione per ASD 2810 (circa)
+# Massa aumentata (Added Mass) per simulare l'acqua spostata
+MASS = 850000.0          # kg (Dislocamento + Massa aggiunta)
+INERTIA = 100000000.0    # kg*m^2 (Inerzia rotazionale molto alta per evitare trottole)
 
-# Resistenza Longitudinale
-K_Y = 25000.0       
-
-# --- RESISTENZE LATERALI BASE ---
-# Valori medi, saranno scalati dinamicamente
-K_X_BOW = 500000.0     
-K_X_STERN = 120000.0    
-
-# Coordinate Centri di Pressione
-Y_BOW_CP = 13.0       
-Y_STERN_CP = -11.0    
-
-# Resistenza Rotazionale
-K_W = 5.0e7         
-I_Z = 65000000.0
+# --- DAMPING (Freno Idrodinamico Semplificato) ---
+# Questi valori frenano il "ghiaccio". 
+# Più alti sono, più la nave è "immersa nella melassa".
+DAMP_LINEAR_X = 15000.0  # Resistenza allo scarroccio laterale
+DAMP_LINEAR_Y = 5000.0   # Resistenza all'avanzamento (minore dello scarroccio)
+DAMP_ANGULAR = 25000000.0 # Resistenza alla rotazione (molto alta per stabilità)
