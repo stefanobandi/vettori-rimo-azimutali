@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion Experimental", layout="wide")
+st.set_page_config(page_title="ASD Centurion V6.60", layout="wide")
 
 st.markdown("""
 <style>
@@ -33,11 +33,13 @@ def set_engine_state(p1, a1, p2, a2):
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion - Experimental Brick ⚓</h1>", unsafe_allow_html=True)
+# --- HEADER AGGIORNATO V6.60 ---
+st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD Centurion ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> Experimental BOI (Brick on Ice) | <b>Bollard Pull:</b> 70 ton <br>
+    <b>Versione:</b> 6.60 (Experimental BOI) <br>
+    <b>Bollard Pull:</b> 70 ton | <b>Lungh:</b> {int(SHIP_LENGTH)}m | <b>Largh:</b> {int(SHIP_WIDTH)}m
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -49,7 +51,7 @@ with st.sidebar:
     c2.button("Reset PP", on_click=reset_pivot, use_container_width=True)
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia (Propeller Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (30s - logica BOI) -Beta-", value=False)
+    show_prediction = st.checkbox("Predizione Movimento (30s) - Beta", value=False)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -81,7 +83,7 @@ ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
-# Vettori forza teorici
+# Vettori forza teorici (Screen coordinates: Y=Up, X=Right)
 F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
@@ -95,12 +97,14 @@ F_sx_eff = F_sx_eff_v * eff_sx
 F_dx_eff = F_dx_eff_v * eff_dx
 ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
 
-# Risultanti globali (solo per display telemetria)
-res_u, res_v = (F_sx_eff[0] + F_dx_eff[0]), (F_sx_eff[1] + F_dx_eff[1])
-res_ton = np.sqrt(res_u**2 + res_v**2)
-direzione_nautica = np.degrees(np.arctan2(res_u, res_v)) % 360
+# Risultanti globali (Screen/Ship frame coincidono a t=0)
+res_u_total = (F_sx_eff[0] + F_dx_eff[0]) # Sway Force (Total X)
+res_v_total = (F_sx_eff[1] + F_dx_eff[1]) # Surge Force (Total Y)
+res_ton = np.sqrt(res_u_total**2 + res_v_total**2)
+direzione_nautica = np.degrees(np.arctan2(res_u_total, res_v_total)) % 360
 
 # --- CALCOLO MOMENTO RISPETTO AL PIVOT POINT (PP) ---
+# M = r x F
 M_tm_PP = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
            (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
 M_knm = M_tm_PP * G_ACCEL
@@ -139,10 +143,16 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # --- PREDIZIONE ---
+    # --- PREDIZIONE (Corretta V6.60) ---
     traj = []
     if show_prediction:
-        traj = predict_trajectory(F_sx_eff, F_dx_eff, pos_sx, pos_dx, st.session_state.pp_y, total_time=30.0)
+        # Convertiamo tonnellate in Newton per la fisica
+        surge_n = res_v_total * 1000 * G_ACCEL # Y axis force
+        sway_n  = res_u_total * 1000 * G_ACCEL # X axis force
+        torque_nm = M_tm_PP * 1000 * G_ACCEL
+        
+        traj = predict_trajectory(surge_n, sway_n, torque_nm, total_time=30.0)
+        
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
             draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
@@ -167,7 +177,7 @@ with col_c:
             v_sx_len = np.linalg.norm(F_sx_eff)*sc; v_dx_len = np.linalg.norm(F_dx_eff)*sc
             ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.08, head_width=min(0.3, v_sx_len*0.4), head_length=min(0.4, v_sx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
             ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.08, head_width=min(0.3, v_dx_len*0.4), head_length=min(0.4, v_dx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
-            pSX_tip = inter + F_sx_eff*sc; pDX_tip = inter + F_dx_eff*sc; pRES_tip = inter + np.array([res_u, res_v])*sc
+            pSX_tip = inter + F_sx_eff*sc; pDX_tip = inter + F_dx_eff*sc; pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
             ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
             ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4); ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
@@ -177,7 +187,7 @@ with col_c:
     
     if res_ton > 0.1:
         v_res_len = res_ton * sc
-        ax.arrow(origin_res[0], origin_res[1], res_u*sc, res_v*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
+        ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
     
     ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Pivot Point")
     
