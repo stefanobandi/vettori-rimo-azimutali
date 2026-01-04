@@ -88,11 +88,11 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA: BRICK ON ICE V2 (Body Frame Integration) ---
+# --- FISICA: BRICK ON ICE V3 (Fixed Rotation Signs) ---
 def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=30.0, steps=20):
     """
     Simula il moto integrando nel sistema di riferimento della nave (Body Frame).
-    Questo assicura che se la nave ruota, le forze dei motori ruotino con essa.
+    CORREZIONE V3: Inversione segno rotazione per matchare Bussola vs Matematica.
     """
     dt = 0.2
     n_total_steps = int(total_time / dt)
@@ -101,10 +101,11 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
     # Stato Iniziale (Body Frame)
     # u = Surge velocity (avanti/indietro, asse Y nave)
     # v = Sway velocity (laterale, asse X nave)
-    # r = Yaw rate (velocità di rotazione)
+    # r = Yaw rate (velocità di rotazione CCW)
     u, v, r = 0.0, 0.0, 0.0
     
     # Stato Globale (World Frame)
+    # head_world: 0=Nord, 90=Est (Clockwise)
     x_world, y_world, head_world = 0.0, 0.0, 0.0
     
     results = []
@@ -112,12 +113,11 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
     for i in range(n_total_steps):
         
         # 1. Calcolo Resistenze (Damping) nel Body Frame
-        # L'acqua si oppone al movimento relativo dello scafo
         F_drag_surge = -DAMP_LINEAR_Y * u
         F_drag_sway  = -DAMP_LINEAR_X * v
         M_drag_yaw   = -DAMP_ANGULAR * r
         
-        # 2. Somma Forze Totali (Motori + Resistenza)
+        # 2. Somma Forze Totali
         F_tot_surge = total_surge_n + F_drag_surge
         F_tot_sway  = total_sway_n + F_drag_sway
         M_tot_yaw   = total_torque_nm + M_drag_yaw
@@ -127,44 +127,33 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
         acc_v = F_tot_sway / MASS
         acc_r = M_tot_yaw / INERTIA
         
-        # 4. Integrazione Velocità (Nuove velocità relative allo scafo)
+        # 4. Integrazione Velocità
         u += acc_u * dt
         v += acc_v * dt
         r += acc_r * dt
         
         # 5. Conversione Velocità da Body Frame a World Frame
-        # Ruotiamo il vettore velocità (v, u) dell'angolo di heading corrente
-        # Nota: Matplotlib 0° è Nord (Y), rotazione oraria negativa.
-        # Ma qui usiamo matematica standard: 0° = Nord, +90° = Est (se coerente con app.py)
-        
+        # Heading (H) è in gradi Clockwise dal Nord.
+        # Surge (u) è allineato con H.
+        # Sway (v) è 90 gradi CW rispetto a H.
         rad_h = np.radians(head_world)
-        
-        # Matrice di rotazione per portare (v, u) nel mondo
-        # v è laterale (X locale), u è longitudinale (Y locale)
-        # Se heading = 0: dx = v, dy = u
-        # Se heading = 90 (Est): dx = u, dy = -v (dipende dalla convenzione, verifichiamo empiricamente)
-        # Convenzione Navale standard: 
-        # Vel_X_World = u * sin(H) + v * cos(H)  (Se H è azimut 0=N, 90=E)
-        # Vel_Y_World = u * cos(H) - v * sin(H)
-        
-        # Usiamo rotazione trigonometrica standard su app.py (0=Y, 90=X)
-        # X_world = X_loc * cos(theta) - Y_loc * sin(theta) ? No, troppo complicato.
-        # Semplice proiezione:
-        # Vettore velocità locale V_loc = [v, u] (x, y)
-        # Ruotiamo V_loc di -head_world (perché app usa angoli orari come positivi o negativi? verifichiamo)
-        # In app.py: sin(rad) è X, cos(rad) è Y. 
-        
         cos_h = np.cos(rad_h)
         sin_h = np.sin(rad_h)
         
-        # Proiezione corretta per il sistema visivo di App.py
+        # Matrice di proiezione Compass Convention:
+        # X (Est) = u*sin(H) + v*cos(H)
+        # Y (Nord) = u*cos(H) - v*sin(H)
         vx_world = v * cos_h + u * sin_h
         vy_world = -v * sin_h + u * cos_h
         
         # 6. Integrazione Posizione
         x_world += vx_world * dt
         y_world += vy_world * dt
-        head_world += np.degrees(r * dt) # Yaw rate positiva = rotazione oraria (DX)
+        
+        # CORREZIONE CRITICA:
+        # Torque CCW (+) deve RIDURRE l'angolo di Heading Compass (che cresce CW)
+        # Esempio: Torque SX (+) -> Heading va verso Ovest (350 deg)
+        head_world -= np.degrees(r * dt) 
         
         if i % record_every == 0:
             results.append((x_world, y_world, head_world))
