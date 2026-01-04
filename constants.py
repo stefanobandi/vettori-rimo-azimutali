@@ -12,22 +12,15 @@ BOLLARD_PULL_PER_ENGINE = 35.0
 SHIP_LENGTH = 32.50
 SHIP_WIDTH = 11.70
 
-# --- FISICA "BRICK ON ICE" (Experimental V6.60 - Precision Tuned) ---
+# --- FISICA "BRICK ON ICE" (Experimental V6.60 - Heavy Inertia) ---
 MASS = 800000.0          # kg 
 
-# INERTIA: 60.000.000 (Come richiesto: solido, non scatta a vuoto)
-INERTIA = 60000000.0     
+# AUMENTATA: 80.000.000 (Prima era 60M)
+# Più resistenza iniziale alla rotazione = sensazione di maggiore stazza
+INERTIA = 80000000.0     
 
 # --- DAMPING (Freno Idrodinamico) ---
-
-# CALIBRATO SU SIDE STEP: 11t spinta -> 2.5 nodi velocità
-# 108.000 N / 1.28 m/s = ~85.000
-DAMP_LINEAR_X = 85000.0  
-
-# CALIBRATO SU AVANTI:
-# Impedisce al rimorchiatore di diventare un motoscafo da corsa
-DAMP_LINEAR_Y = 50000.0   
-
-# CALIBRATO SU ROTAZIONE:
-# Basso (12M) per permettere rotazioni agili come piace a te
-DAMP_ANGULAR = 12000000.0
+# Parametri calibrati sulla manovra "Side Step" e "Avanti"
+DAMP_LINEAR_X = 85000.0  # Freno laterale (Side Step ~2.5 kn)
+DAMP_LINEAR_Y = 50000.0  # Freno longitudinale
+DAMP_ANGULAR = 12000000.0 # Freno rotazionale (mantenuto basso per agilità in velocità)
