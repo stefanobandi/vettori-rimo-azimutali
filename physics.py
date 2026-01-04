@@ -3,7 +3,6 @@ import streamlit as st
 from constants import *
 
 # --- FUNZIONI DI MANOVRA (Invariate) ---
-# Copiamo le funzioni di input per non rompere l'interfaccia
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
@@ -89,79 +88,98 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA SPERIMENTALE: "BRICK ON ICE" ---
-# Concetto: Il Pivot Point impostato dall'utente DIVENTA il Baricentro matematico.
-# Nessuna resistenza idrodinamica complessa. Solo F=ma e Torque=I*alpha.
-
+# --- FISICA: BRICK ON ICE + DAMPING ---
 def predict_trajectory(F_sx_vec, F_dx_vec, pos_sx, pos_dx, pp_y, total_time=30.0, steps=20):
+    """
+    Simula il movimento considerando il PP come Baricentro.
+    Include Damping (Attrito Viscoso) per simulare l'acqua.
+    """
     dt = 0.2
     n_total_steps = int(total_time / dt)
     record_every = max(1, n_total_steps // steps)
     
-    # IL CUORE DELL'IDEA:
-    # Definiamo che il centro di massa del sistema è ESATTAMENTE dove hai messo il Pivot Point.
-    # Quindi tutti i momenti sono calcolati rispetto a questo punto.
+    # 1. Definiamo il Baricentro (CM) coincidente col Pivot Point
     center_of_mass = np.array([0.0, pp_y])
     
-    # Forze in Newton
+    # 2. Conversione forze in Newton
     F_sx_n = F_sx_vec * 1000 * G_ACCEL
     F_dx_n = F_dx_vec * 1000 * G_ACCEL
     
-    # 1. Forza Risultante (Lineare)
-    # Questa sposta il mattone nello spazio
-    F_net = F_sx_n + F_dx_n
-    
-    # 2. Momento Torcente (Rotazionale)
-    # Calcolato rigorosamente rispetto al Pivot Point (che ora è il CM)
+    # 3. Calcolo Momenti (Torque) rispetto al CM (che è il PP)
+    # Braccio di leva = Posizione Thruster - Posizione PP
     r_sx = pos_sx - center_of_mass
-    M_sx = r_sx[0] * F_sx_n[1] - r_sx[1] * F_sx_n[0]
-    
     r_dx = pos_dx - center_of_mass
+    
+    # Momento = r_x * F_y - r_y * F_x (Prodotto vettoriale 2D)
+    M_sx = r_sx[0] * F_sx_n[1] - r_sx[1] * F_sx_n[0]
     M_dx = r_dx[0] * F_dx_n[1] - r_dx[1] * F_dx_n[0]
     
-    Total_Torque = M_sx + M_dx
-
-    # Parametri "Mattone"
-    MASS_BRICK = 700000.0  
-    INERTIA_BRICK = 80000000.0 
+    Torque_Total = M_sx + M_dx
+    Force_Total = F_sx_n + F_dx_n
     
-    # Stato Iniziale
-    x, y, heading_deg = 0.0, 0.0, 0.0
-    u, v, r = 0.0, 0.0, 0.0 
+    # Stato Iniziale (Locale allo scafo)
+    # u = surge velocity (avanti/indietro), v = sway velocity (laterale), r = yaw rate
+    u, v, r_rate = 0.0, 0.0, 0.0 
+    
+    # Stato Globale (Mondo)
+    x_world, y_world, head_world = 0.0, 0.0, 0.0
     
     results = []
     
     for i in range(n_total_steps):
+        # A. Calcolo Resistenze (Damping Idrodinamico)
+        # Resistenza proporzionale alla velocità (Viscosità lineare per stabilità)
+        # F_drag = -Coeff * Vel
+        Drag_X = -DAMP_LINEAR_X * v
+        Drag_Y = -DAMP_LINEAR_Y * u
+        Drag_M = -DAMP_ANGULAR * r_rate
         
-        # Accelerazioni (Legge di Newton F=ma)
-        du = F_net[0] / MASS_BRICK
-        dv = F_net[1] / MASS_BRICK
-        dr = Total_Torque / INERTIA_BRICK
+        # B. Somma Forze e Momenti
+        F_tot_x_local = Force_Total[0] + Drag_X # Nota: F[0] è X (sway) nel setup attuale
+        F_tot_y_local = Force_Total[1] + Drag_Y # Nota: F[1] è Y (surge)
+        M_tot_local   = Torque_Total + Drag_M
         
-        # Aggiornamento Velocità
-        u += du * dt
-        v += dv * dt
-        r += dr * dt
+        # C. Legge di Newton (F=ma => a=F/m)
+        acc_u = F_tot_y_local / MASS
+        acc_v = F_tot_x_local / MASS
+        acc_r = M_tot_local / INERTIA
         
-        # Attrito "Ghiaccio" (Damping lineare semplice)
-        # Serve solo a non far schizzare via il mattone all'infinito
-        u *= 0.95
-        v *= 0.95
-        r *= 0.90 # Frena la rotazione un po' di più
+        # D. Integrazione Velocità
+        u += acc_u * dt
+        v += acc_v * dt
+        r_rate += acc_r * dt
         
-        # Integrazione Posizione
-        rad = np.radians(heading_deg)
+        # E. Integrazione Posizione (Rotazione nel mondo)
+        rad = np.radians(head_world)
         cos_a, sin_a = np.cos(rad), np.sin(rad)
         
-        # Ruotiamo il vettore velocità nel mondo
-        dx_w = u * cos_a + v * sin_a 
-        dy_w = -u * sin_a + v * cos_a
+        # Velocità nel sistema mondo
+        # u è lungo l'asse Y della nave, v è lungo l'asse X della nave
+        vel_x_world = v * cos_a + u * sin_a  # Attenzione: definizione assi scafo vs mondo
+        vel_y_world = -v * sin_a + u * cos_a # u punta verso l'alto (Y), v verso dx (X)
         
-        x += dx_w * dt
-        y += dy_w * dt
-        heading_deg -= np.degrees(r * dt) 
+        # Correzione assi standard marittimi vs Matplotlib:
+        # In questo progetto: Y è la prua (Longitudinale), X è destra.
+        # Matplotlib 0 deg è Nord (Y).
+        dx_w = v * np.cos(rad) + u * np.sin(rad) # X locale proiettato
+        dy_w = -v * np.sin(rad) + u * np.cos(rad) # Y locale proiettato
+        
+        # Semplificazione per visualizzazione diretta (Assumendo start a 0 deg)
+        # Se la nave ruota, il vettore velocità nel mondo cambia direzione.
+        # Qui usiamo una matrice di rotazione standard 2D.
+        # V_world = R * V_local
+        # | dx |   | cos -sin | | v | (v è x locale)
+        # | dy | = | sin  cos | | u | (u è y locale)
+        # Verifica: se heading=0, dx=v, dy=u. Corretto.
+        
+        dx_w = v * np.cos(rad) - u * np.sin(rad)
+        dy_w = v * np.sin(rad) + u * np.cos(rad)
+
+        x_world += dx_w * dt
+        y_world += dy_w * dt
+        head_world -= np.degrees(r_rate * dt) # Matplotlib ruota in senso orario negativo per visual
         
         if i % record_every == 0:
-            results.append((x, y, heading_deg))
+            results.append((x_world, y_world, head_world))
             
     return results
