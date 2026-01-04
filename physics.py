@@ -88,11 +88,11 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA: BRICK ON ICE V3 (Fixed Rotation Signs) ---
+# --- FISICA: BRICK ON ICE V3 (Conferma importazione costanti) ---
 def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=30.0, steps=20):
     """
     Simula il moto integrando nel sistema di riferimento della nave (Body Frame).
-    CORREZIONE V3: Inversione segno rotazione per matchare Bussola vs Matematica.
+    Usa DAMP_LINEAR_X e DAMP_LINEAR_Y da constants.py per frenare il moto.
     """
     dt = 0.2
     n_total_steps = int(total_time / dt)
@@ -105,7 +105,6 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
     u, v, r = 0.0, 0.0, 0.0
     
     # Stato Globale (World Frame)
-    # head_world: 0=Nord, 90=Est (Clockwise)
     x_world, y_world, head_world = 0.0, 0.0, 0.0
     
     results = []
@@ -113,6 +112,7 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
     for i in range(n_total_steps):
         
         # 1. Calcolo Resistenze (Damping) nel Body Frame
+        # Qui usiamo i nuovi valori alti (85000 per X, 50000 per Y)
         F_drag_surge = -DAMP_LINEAR_Y * u
         F_drag_sway  = -DAMP_LINEAR_X * v
         M_drag_yaw   = -DAMP_ANGULAR * r
@@ -133,16 +133,11 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
         r += acc_r * dt
         
         # 5. Conversione Velocità da Body Frame a World Frame
-        # Heading (H) è in gradi Clockwise dal Nord.
-        # Surge (u) è allineato con H.
-        # Sway (v) è 90 gradi CW rispetto a H.
         rad_h = np.radians(head_world)
         cos_h = np.cos(rad_h)
         sin_h = np.sin(rad_h)
         
         # Matrice di proiezione Compass Convention:
-        # X (Est) = u*sin(H) + v*cos(H)
-        # Y (Nord) = u*cos(H) - v*sin(H)
         vx_world = v * cos_h + u * sin_h
         vy_world = -v * sin_h + u * cos_h
         
@@ -150,9 +145,7 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, total_time=
         x_world += vx_world * dt
         y_world += vy_world * dt
         
-        # CORREZIONE CRITICA:
-        # Torque CCW (+) deve RIDURRE l'angolo di Heading Compass (che cresce CW)
-        # Esempio: Torque SX (+) -> Heading va verso Ovest (350 deg)
+        # Rotazione (Torque positivo = rotazione antioraria -> Riduce Heading)
         head_world -= np.degrees(r * dt) 
         
         if i % record_every == 0:
