@@ -2,7 +2,7 @@ import numpy as np
 import streamlit as st
 from constants import *
 
-# --- FUNZIONI DI MANOVRA ---
+# --- FUNZIONI DI MANOVRA (Invariate) ---
 def apply_slow_side_step(direction):
     pp_y = st.session_state.pp_y
     dy = pp_y - POS_THRUSTERS_Y
@@ -60,14 +60,10 @@ def apply_fast_side_step(direction):
 
 def apply_turn_on_the_spot(direction):
     potenza = 50
-    # NUOVA LOGICA ANGOLI (+-30 gradi dall'asse)
     if direction == "DRITTA": # Rotazione Oraria
-        # SX 330 (Spinta avanti-dx), DX 210 (Spinta indietro-dx)
         st.session_state.p1, st.session_state.a1 = potenza, 330
         st.session_state.p2, st.session_state.a2 = potenza, 210
-    else: # SINISTRA (Rotazione Antioraria) - SPECULARE
-        # Speculare di 210 è 150 (SX)
-        # Speculare di 330 è 30 (DX)
+    else: # SINISTRA (Rotazione Antioraria)
         st.session_state.p1, st.session_state.a1 = potenza, 150
         st.session_state.p2, st.session_state.a2 = potenza, 30
 
@@ -92,12 +88,12 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- FISICA: BRICK ON ICE V3.1 (Pivot-Aware) ---
-def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, pp_y_offset=0.0, total_time=30.0, steps=20):
+# --- FISICA: BRICK ON ICE V3.2 (Full Pivot Physics) ---
+def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, pp_x_offset=0.0, pp_y_offset=0.0, total_time=30.0, steps=20):
     """
     Simula il moto integrando nel Body Frame.
-    V3.1: Calcola il Damping Laterale (Resistenza) NEL PUNTO PP, non nel centro geometrico.
-    Questo vincola fisicamente la nave a ruotare attorno al Pivot Point selezionato.
+    V3.2: Calcola Damping Laterale E Longitudinale nel punto esatto del Pivot (X, Y).
+    Risolve bug di segno e include l'effetto di leva laterale.
     """
     dt = 0.2
     n_total_steps = int(total_time / dt)
@@ -105,62 +101,60 @@ def predict_trajectory(total_surge_n, total_sway_n, total_torque_nm, pp_y_offset
     
     # Stato Iniziale (Body Frame)
     u, v, r = 0.0, 0.0, 0.0
-    
-    # Stato Globale (World Frame)
     x_world, y_world, head_world = 0.0, 0.0, 0.0
-    
     results = []
     
     for i in range(n_total_steps):
         
-        # 1. Calcolo Velocità Locale al Pivot Point
-        # La velocità laterale al PP è la somma di Sway (v) + Effetto Rotazionale (r * dist)
-        v_at_pp = v + (r * pp_y_offset)
+        # 1. Calcolo Velocità Locale al Pivot Point (Cinematica Rigorosa)
+        # V_pp = V_cg + omega x r_pp
+        # omega = (0, 0, r), r_pp = (x, y, 0)
+        # Cross product: (-r*y, r*x, 0)
+        
+        # Velocità Sway al PP: v - r*y
+        v_at_pp_x = v - (r * pp_y_offset)
+        
+        # Velocità Surge al PP: u + r*x
+        v_at_pp_y = u + (r * pp_x_offset)
 
-        # 2. Calcolo Resistenze (Damping)
-        # Freno longitudinale (sulla nave intera)
-        F_drag_surge = -DAMP_LINEAR_Y * u
+        # 2. Calcolo Resistenze (Damping) applicate al Pivot Point
+        # Freno laterale (basato sulla velocità laterale locale)
+        F_drag_sway = -DAMP_LINEAR_X * v_at_pp_x
         
-        # Freno laterale applicato AL PIVOT POINT
-        # Usiamo DAMP_LINEAR_X ma calcolato sulla velocità del PP
-        F_drag_sway_at_pp = -DAMP_LINEAR_X * v_at_pp
+        # Freno longitudinale (basato sulla velocità longitudinale locale)
+        # Nota: Usiamo lo stesso coeff DAMP_Y globale, ma applicato localmente
+        F_drag_surge = -DAMP_LINEAR_Y * v_at_pp_y
         
-        # Questo freno al PP genera una forza laterale totale...
-        F_drag_sway = F_drag_sway_at_pp
-        
-        # ...E genera anche un MOMENTO RESISTIVO addizionale perché la forza non è applicata al centro (0,0)
-        # Momento = Forza * Braccio
-        M_induced_by_pp_drag = F_drag_sway_at_pp * pp_y_offset
+        # 3. Momenti Indotti dal Damping
+        # Una forza applicata in un punto decentrato crea un momento (Torque = r x F)
+        # Torque = x*Fy - y*Fx
+        M_induced = (pp_x_offset * F_drag_surge) - (pp_y_offset * F_drag_sway)
 
-        # Freno rotazionale puro (viscosità dell'acqua)
+        # Freno rotazionale puro
         M_drag_yaw = -DAMP_ANGULAR * r
         
-        # 3. Somma Forze Totali
+        # 4. Somma Forze Totali e Momenti
         F_tot_surge = total_surge_n + F_drag_surge
         F_tot_sway  = total_sway_n + F_drag_sway
+        M_tot_yaw   = total_torque_nm + M_drag_yaw + M_induced
         
-        # Somma Momenti: Torque Motori + Freno Rotazione + Momento indotto dal vincolo al PP
-        M_tot_yaw   = total_torque_nm + M_drag_yaw + M_induced_by_pp_drag
-        
-        # 4. Legge di Newton (Acc = F/m)
+        # 5. Legge di Newton
         acc_u = F_tot_surge / MASS
         acc_v = F_tot_sway / MASS
         acc_r = M_tot_yaw / INERTIA
         
-        # 5. Integrazione Velocità
+        # 6. Integrazione
         u += acc_u * dt
         v += acc_v * dt
         r += acc_r * dt
         
-        # 6. Conversione Velocità da Body Frame a World Frame
+        # 7. World Frame
         rad_h = np.radians(head_world)
-        cos_h = np.cos(rad_h)
-        sin_h = np.sin(rad_h)
+        cos_h, sin_h = np.cos(rad_h), np.sin(rad_h)
         
         vx_world = v * cos_h + u * sin_h
         vy_world = -v * sin_h + u * cos_h
         
-        # 7. Integrazione Posizione
         x_world += vx_world * dt
         y_world += vy_world * dt
         head_world -= np.degrees(r * dt) 
