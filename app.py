@@ -7,7 +7,7 @@ from constants import *
 from physics import *
 from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.61", layout="wide")
+st.set_page_config(page_title="ASD Centurion V6.62", layout="wide")
 
 st.markdown("""
 <style>
@@ -33,12 +33,12 @@ def set_engine_state(p1, a1, p2, a2):
 def reset_engines(): set_engine_state(50, 0, 50, 0)
 def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
 
-# --- HEADER AGGIORNATO V6.61 ---
+# --- HEADER AGGIORNATO V6.62 ---
 st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD Centurion ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
     <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> 6.61 (Pivot-Aware BOI) <br>
+    <b>Versione:</b> 6.62 (Full Pivot Physics) <br>
     <b>Bollard Pull:</b> 70 ton | <b>Lungh:</b> {int(SHIP_LENGTH)}m | <b>Largh:</b> {int(SHIP_WIDTH)}m
 </div>
 """, unsafe_allow_html=True)
@@ -143,16 +143,18 @@ with col_c:
 
     fig, ax = plt.subplots(figsize=(10, 12))
     
-    # --- PREDIZIONE V6.61 (Pivot Aware) ---
+    # --- PREDIZIONE V6.62 (Full Pivot Support) ---
     traj = []
     if show_prediction:
-        # Convertiamo tonnellate in Newton per la fisica
-        surge_n = res_v_total * 1000 * G_ACCEL # Y axis force
-        sway_n  = res_u_total * 1000 * G_ACCEL # X axis force
+        surge_n = res_v_total * 1000 * G_ACCEL 
+        sway_n  = res_u_total * 1000 * G_ACCEL 
         torque_nm = M_tm_PP * 1000 * G_ACCEL
         
-        # PASSAGGIO CRITICO: Inviamo la posizione Y del Pivot Point
-        traj = predict_trajectory(surge_n, sway_n, torque_nm, pp_y_offset=st.session_state.pp_y, total_time=30.0)
+        # ORA PASSIAMO SIA X CHE Y
+        traj = predict_trajectory(surge_n, sway_n, torque_nm, 
+                                  pp_x_offset=st.session_state.pp_x, 
+                                  pp_y_offset=st.session_state.pp_y, 
+                                  total_time=30.0)
         
         for idx, (tx, ty, th) in enumerate(traj):
             alpha = (idx + 1) / (len(traj) + 5) * 0.4
