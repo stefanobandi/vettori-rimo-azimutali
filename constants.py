@@ -12,15 +12,20 @@ BOLLARD_PULL_PER_ENGINE = 35.0
 SHIP_LENGTH = 32.50
 SHIP_WIDTH = 11.70
 
-# --- FISICA "BRICK ON ICE" (Experimental V6.60 - Heavy Inertia) ---
+# --- FISICA "BRICK ON ICE" (Tuning V6.62 - Stable & Heavy) ---
 MASS = 800000.0          # kg 
 
-# AUMENTATA: 80.000.000 (Prima era 60M)
-# Più resistenza iniziale alla rotazione = sensazione di maggiore stazza
-INERTIA = 80000000.0     
+# AUMENTATA: 100.000.000 (Era 80M)
+# Rende la nave molto più restia a iniziare a ruotare per errore.
+# Filtra le "sporcizie" vettoriali nei Side Step.
+INERTIA = 100000000.0     
 
 # --- DAMPING (Freno Idrodinamico) ---
-# Parametri calibrati sulla manovra "Side Step" e "Avanti"
-DAMP_LINEAR_X = 85000.0  # Freno laterale (Side Step ~2.5 kn)
-DAMP_LINEAR_Y = 50000.0  # Freno longitudinale
-DAMP_ANGULAR = 12000000.0 # Freno rotazionale (mantenuto basso per agilità in velocità)
+DAMP_LINEAR_X = 85000.0  # Freno laterale (Invariato - ottimo per Side Step)
+DAMP_LINEAR_Y = 50000.0  # Freno longitudinale (Invariato)
+
+# AUMENTATO DRASTICAMENTE: 30.000.000 (Era 12M)
+# Questo è il "segreto": un freno rotazionale alto impedisce che
+# un piccolo disallineamento del vettore forza crei una rotazione continua.
+# La nave tenderà a raddrizzarsi o a ruotare molto lentamente.
+DAMP_ANGULAR = 30000000.0
