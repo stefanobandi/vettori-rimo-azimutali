@@ -21,7 +21,7 @@ MASS = 800000.0          # kg
 INERTIA = 100000000.0     
 
 # --- DAMPING (Freno Idrodinamico) ---
-DAMP_LINEAR_X = 85000.0  # Freno laterale (Invariato - ottimo per Side Step)
+DAMP_LINEAR_X = 95000.0  # Freno laterale (Invariato - ottimo per Side Step)
 DAMP_LINEAR_Y = 50000.0  # Freno longitudinale (Invariato)
 
 # AUMENTATO DRASTICAMENTE: 30.000.000 (Era 12M)
