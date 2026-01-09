@@ -28,4 +28,4 @@ DAMP_LINEAR_Y = 50000.0  # Freno longitudinale (Invariato)
 # Questo è il "segreto": un freno rotazionale alto impedisce che
 # un piccolo disallineamento del vettore forza crei una rotazione continua.
 # La nave tenderà a raddrizzarsi o a ruotare molto lentamente.
-DAMP_ANGULAR = 24000000.0
+DAMP_ANGULAR = 22000000.0
