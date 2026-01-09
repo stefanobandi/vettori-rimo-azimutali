@@ -21,11 +21,11 @@ MASS = 800000.0          # kg
 INERTIA = 100000000.0     
 
 # --- DAMPING (Freno Idrodinamico) ---
-DAMP_LINEAR_X = 95000.0  # Freno laterale (Invariato - ottimo per Side Step)
+DAMP_LINEAR_X = 85000.0  # Freno laterale (Invariato - ottimo per Side Step)
 DAMP_LINEAR_Y = 50000.0  # Freno longitudinale (Invariato)
 
 # AUMENTATO DRASTICAMENTE: 30.000.000 (Era 12M)
 # Questo è il "segreto": un freno rotazionale alto impedisce che
 # un piccolo disallineamento del vettore forza crei una rotazione continua.
 # La nave tenderà a raddrizzarsi o a ruotare molto lentamente.
-DAMP_ANGULAR = 22000000.0
+DAMP_ANGULAR = 30000000.0
