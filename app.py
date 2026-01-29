@@ -8,7 +8,7 @@ from physics import *
 from visualization import *
 import time
 
-st.set_page_config(page_title="ASD Centurion V7.4", layout="wide")
+st.set_page_config(page_title="ASD Centurion V7.5", layout="wide")
 
 st.markdown("""
 <style>
@@ -38,92 +38,55 @@ def reset_engines():
     st.session_state.history_x = []
     st.session_state.history_y = []
 
-# --- SOLVER ALGORITMICO FAST SIDE STEP ---
+# --- SOLVER FAST SIDE STEP ---
 def solve_fast_side_step(mode):
-    # OBIETTIVO:
-    # 1. Risultante forze orientata a 90 (Est) o 270 (Ovest). Quindi FX_net = 0.
-    # 2. Momento risultante nullo attorno al PIVOT TARGET (Y=5).
-    
-    Y_target = POS_SKEG_Y # 5.0
-    
-    # Coordinate Locali Motori rispetto al Pivot (0, 5)
-    # Motori a Y=-12. 
-    # Braccio Longitudinale dy = -12 - 5 = -17m.
-    # Braccio Laterale dx_sx = -2.7, dx_dx = +2.7.
-    
+    Y_target = POS_SKEG_Y
     dy = -17.0
     dx_sx = -POS_THRUSTERS_X
     dx_dx = POS_THRUSTERS_X
     
     if mode == "DRITTA":
-        # MASTER: SX @ 50deg, 50%
-        p_m = 50.0
-        a_m = 50.0
-        
-        # Componenti Forza Master (Screen Coords: Y=Fwd, X=Right)
-        rad_m = np.radians(a_m)
-        Fy_m = p_m * np.cos(rad_m) # Fwd
-        Fx_m = p_m * np.sin(rad_m) # Right
-        
-        # Momento Master attorno al Pivot
-        # M = dx * Fy - dy * Fx (Screen Coords Torque convention: x*Fy - y*Fx)
-        M_m = (dx_sx * Fy_m) - (dy * Fx_m)
-        
-        # SLAVE (DX): Deve annullare FY (Surge) e Momento
-        # Eq 1: Fy_s = -Fy_m (Per avere Surge nullo)
-        Fy_s = -Fy_m
-        
-        # Eq 2: M_s + M_m = 0
-        # M_s = dx_dx * Fy_s - dy * Fx_s
-        # dx_dx * Fy_s - dy * Fx_s = -M_m
-        # -dy * Fx_s = -M_m - dx_dx * Fy_s
-        # Fx_s = (M_m + dx_dx * Fy_s) / dy
-        
-        Fx_s = (M_m + dx_dx * Fy_s) / dy
-        
-        # Ricostruzione Vettore
-        p_s = np.sqrt(Fx_s**2 + Fy_s**2)
-        rad_s = np.arctan2(Fx_s, Fy_s) # arctan2(x, y) per angolo da Nord
-        a_s = np.degrees(rad_s) % 360
-        
-        set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
-        st.toast(f"Fast Dritta Solver: Slave {int(p_s)}% @ {int(a_s)}°")
-        
-    else: # SINISTRA
-        # MASTER: DX @ 310deg, 50%
-        p_m = 50.0
-        a_m = 310.0
-        
+        p_m, a_m = 50.0, 50.0
         rad_m = np.radians(a_m)
         Fy_m = p_m * np.cos(rad_m)
         Fx_m = p_m * np.sin(rad_m)
+        M_m = (dx_sx * Fy_m) - (dy * Fx_m)
         
+        Fy_s = -Fy_m
+        Fx_s = (M_m + dx_dx * Fy_s) / dy
+        
+        p_s = np.sqrt(Fx_s**2 + Fy_s**2)
+        rad_s = np.arctan2(Fx_s, Fy_s)
+        a_s = np.degrees(rad_s) % 360
+        set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
+        
+    else: # SINISTRA
+        p_m, a_m = 50.0, 310.0
+        rad_m = np.radians(a_m)
+        Fy_m = p_m * np.cos(rad_m)
+        Fx_m = p_m * np.sin(rad_m)
         M_m = (dx_dx * Fy_m) - (dy * Fx_m)
         
-        # SLAVE (SX)
         Fy_s = -Fy_m
-        # M_s = dx_sx * Fy_s - dy * Fx_s
-        # -dy * Fx_s = -M_m - dx_sx * Fy_s
         Fx_s = (M_m + dx_sx * Fy_s) / dy
         
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
-        
         set_engine_state(int(p_s), int(a_s), int(p_m), int(a_m))
-        st.toast(f"Fast Sinistra Solver: Slave {int(p_s)}% @ {int(a_s)}°")
 
 def apply_slow_side_step(direction):
     if direction == "DRITTA":
         set_engine_state(50, 10, 50, 170)
     else:
-        set_engine_state(50, 350, 50, 190)
+        # CORRETTO: Speculare per sinistra
+        # DX=350, SX=190
+        set_engine_state(50, 190, 50, 350)
 
 def apply_turn_on_the_spot(direction):
-    if direction == "DRITTA": # CW
+    if direction == "DRITTA":
         set_engine_state(50, 330, 50, 210)
-    else: # CCW - Speculare richiesto dall'utente
-        # DX=030, SX=150
+    else:
         set_engine_state(50, 150, 50, 30)
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
@@ -148,11 +111,11 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     except: return None
 
 # --- HEADER ---
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.4 ⚓</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.5 ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
-    <b>Versione:</b> 7.4 (Fixed Physics & Solvers) <br>
-    <b>Max Speed:</b> 12.7 kt | <b>Fast Step:</b> Force-Moment Solver
+    <b>Versione:</b> 7.5 (Tuning 12.7kt & Vectors) <br>
+    <b>Bollard Pull:</b> 70 ton (35x2) | <b>Zoom:</b> 120m
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -233,7 +196,6 @@ if show_prediction:
     state = st.session_state.physics.state
     st.session_state.history_x.append(state[0])
     st.session_state.history_y.append(state[1])
-    # Trace più lunga
     if len(st.session_state.history_x) > 1000:
         st.session_state.history_x.pop(0)
         st.session_state.history_y.pop(0)
@@ -261,7 +223,7 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    with st.expander("📍 Pivot Point (Auto Logic V7.4)", expanded=True):
+    with st.expander("📍 Pivot Point (Auto Logic V7.5)", expanded=True):
         st.metric("Posizione PP (Auto)", f"Y = {pp_y_auto:.2f} m")
     
     if wash_dx_hits_sx:
@@ -272,13 +234,13 @@ with col_c:
     fig, ax = plt.subplots(figsize=(10, 12))
     ax.set_facecolor('#141E28')
     
-    # 1. Disegna Nave (Sempre al centro)
+    # 1. Disegna Nave
     draw_static_elements(ax, pos_sx, pos_dx)
     
     # Pivot Point Visual
     ax.scatter(0, pp_y_auto, c='yellow', s=150, zorder=20, edgecolors='black', label="Pivot")
     
-    # VETTORI DI FORZA (Disegnati SEMPRE)
+    # VETTORI DI FORZA
     sc = 0.7 
     # Vettori Motori
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
@@ -288,9 +250,21 @@ with col_c:
     if res_ton > 0.1:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=26, length_includes_head=True)
+
+    # COSTRUZIONE VETTORIALE (Linee tratteggiate) - Ripristinata come V6.62
+    if show_construction and inter is not None and res_ton > 0.1:
+        pSX_tip = inter + F_sx_eff*sc
+        pDX_tip = inter + F_dx_eff*sc
+        pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
+        
+        # Parallelogramma
+        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='white', ls='--', lw=1.5, alpha=0.6, zorder=24)
+        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='white', ls='--', lw=1.5, alpha=0.6, zorder=24)
+        # Linee di prolungamento dai motori all'intersezione
+        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4, zorder=23)
+        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4, zorder=23)
     
     if show_prediction:
-        # RADAR VIEW
         state = st.session_state.physics.state
         ship_x, ship_y = state[0], state[1]
         ship_heading = state[2]
@@ -298,7 +272,7 @@ with col_c:
         rot_angle = -(ship_heading - np.pi/2)
         c, s = np.cos(rot_angle), np.sin(rot_angle)
             
-        # 1. TRACE FIX (PAST POSITION)
+        # Trace Fix
         if len(st.session_state.history_x) > 1:
             hx = np.array(st.session_state.history_x)
             hy = np.array(st.session_state.history_y)
@@ -306,12 +280,11 @@ with col_c:
             dy = hy - ship_y
             tx = dx * c - dy * s
             ty = dx * s + dy * c
-            # Disegna la linea SOTTO tutto (zorder 0)
             ax.plot(tx, ty, color='#64C8FF', linewidth=3, alpha=0.5, zorder=0)
 
-        # 2. GRIGLIA INFINITA
-        grid_spacing = 100.0 
-        view_radius = 400.0 
+        # GRIGLIA INFINITA (Più visibile)
+        grid_spacing = 50.0 
+        view_radius = 200.0 
         
         offset_x = ship_x % grid_spacing
         offset_y = ship_y % grid_spacing
@@ -327,9 +300,10 @@ with col_c:
         gx_r = gx * c - gy * s
         gy_r = gx * s + gy * c
         
-        ax.scatter(gx_r, gy_r, c='white', s=5, alpha=0.2, zorder=0)
+        # Punti più grandi e visibili
+        ax.scatter(gx_r, gy_r, c='white', s=15, alpha=0.4, zorder=0)
 
-        # 3. Box Dati Navigazione
+        # Info Box
         math_deg = np.degrees(ship_heading)
         naut_hdg = (90 - math_deg) % 360
         speed_kn = np.sqrt(state[3]**2 + state[4]**2) * 1.94
@@ -340,16 +314,16 @@ with col_c:
             f"V  : {speed_kn:5.1f} kn\n"
             f"RoT: {rot_deg_min:5.1f} °/m"
         )
-        ax.text(-220, 200, info_text, 
+        # Posizione box relativa alla finestra
+        ax.text(-100, 100, info_text, 
                 color='#00ff00', fontsize=12, family='monospace', fontweight='bold',
                 bbox=dict(facecolor='black', alpha=0.7, edgecolor='#00ff00'))
         
-        # Viewport Zoom Out (250m radius)
-        ax.set_xlim(-250, 250)
-        ax.set_ylim(-250, 250)
+        # ZOOM OTTIGMIZZATO (120m)
+        ax.set_xlim(-120, 120)
+        ax.set_ylim(-120, 120)
         
     else:
-        # Static View
         if show_wash:
             draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
             draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
