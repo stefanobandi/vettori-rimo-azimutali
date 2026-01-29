@@ -8,7 +8,7 @@ from physics import *
 from visualization import *
 import time
 
-st.set_page_config(page_title="ASD Centurion V7.5", layout="wide")
+st.set_page_config(page_title="ASD Centurion V7.6", layout="wide")
 
 st.markdown("""
 <style>
@@ -79,8 +79,6 @@ def apply_slow_side_step(direction):
     if direction == "DRITTA":
         set_engine_state(50, 10, 50, 170)
     else:
-        # CORRETTO: Speculare per sinistra
-        # DX=350, SX=190
         set_engine_state(50, 190, 50, 350)
 
 def apply_turn_on_the_spot(direction):
@@ -111,11 +109,11 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     except: return None
 
 # --- HEADER ---
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.5 ⚓</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.6 ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
-    <b>Versione:</b> 7.5 (Tuning 12.7kt & Vectors) <br>
-    <b>Bollard Pull:</b> 70 ton (35x2) | <b>Zoom:</b> 120m
+    <b>Versione:</b> 7.6 (Quad-Drag & Black Lines) <br>
+    <b>Max Speed:</b> 12.7 kt | <b>Zoom:</b> 80m
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -128,7 +126,7 @@ with st.sidebar:
     st.markdown("---")
     show_wash = st.checkbox("Visualizza Scia", value=True)
     show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
-    show_construction = st.checkbox("Costruzione Vettoriale", value=True)
+    show_construction = st.checkbox("Costruzione Vettoriale (NERO)", value=True)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
     cf1, cf2 = st.columns(2)
@@ -223,7 +221,7 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    with st.expander("📍 Pivot Point (Auto Logic V7.5)", expanded=True):
+    with st.expander("📍 Pivot Point (Auto Logic V7.6)", expanded=True):
         st.metric("Posizione PP (Auto)", f"Y = {pp_y_auto:.2f} m")
     
     if wash_dx_hits_sx:
@@ -232,7 +230,7 @@ with col_c:
         st.error("⚠️ ATTENZIONE: Flusso SX investe DX -> Perdita 20% spinta DX")
 
     fig, ax = plt.subplots(figsize=(10, 12))
-    ax.set_facecolor('#141E28')
+    ax.set_facecolor(COLOR_SEA) # Colore chiaro per contrasto nero
     
     # 1. Disegna Nave
     draw_static_elements(ax, pos_sx, pos_dx)
@@ -246,23 +244,23 @@ with col_c:
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     
-    # Vettore Risultante
+    # Vettore Risultante (BLU)
     if res_ton > 0.1:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=26, length_includes_head=True)
 
-    # COSTRUZIONE VETTORIALE (Linee tratteggiate) - Ripristinata come V6.62
+    # COSTRUZIONE VETTORIALE (Linee NERE come richiesto)
     if show_construction and inter is not None and res_ton > 0.1:
         pSX_tip = inter + F_sx_eff*sc
         pDX_tip = inter + F_dx_eff*sc
         pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
         
-        # Parallelogramma
-        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='white', ls='--', lw=1.5, alpha=0.6, zorder=24)
-        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='white', ls='--', lw=1.5, alpha=0.6, zorder=24)
-        # Linee di prolungamento dai motori all'intersezione
-        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4, zorder=23)
-        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4, zorder=23)
+        # Parallelogramma NERO (Ben visibile su fondo chiaro)
+        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='black', ls='--', lw=2.0, alpha=0.8, zorder=24)
+        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='black', ls='--', lw=2.0, alpha=0.8, zorder=24)
+        # Linee di prolungamento
+        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.5, alpha=0.5, zorder=23)
+        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1.5, alpha=0.5, zorder=23)
     
     if show_prediction:
         state = st.session_state.physics.state
@@ -280,9 +278,9 @@ with col_c:
             dy = hy - ship_y
             tx = dx * c - dy * s
             ty = dx * s + dy * c
-            ax.plot(tx, ty, color='#64C8FF', linewidth=3, alpha=0.5, zorder=0)
+            ax.plot(tx, ty, color='#333333', linewidth=2, alpha=0.4, zorder=0)
 
-        # GRIGLIA INFINITA (Più visibile)
+        # GRIGLIA NERA (Visibile su fondo chiaro)
         grid_spacing = 50.0 
         view_radius = 200.0 
         
@@ -300,8 +298,8 @@ with col_c:
         gx_r = gx * c - gy * s
         gy_r = gx * s + gy * c
         
-        # Punti più grandi e visibili
-        ax.scatter(gx_r, gy_r, c='white', s=15, alpha=0.4, zorder=0)
+        # Punti Neri e Grandi
+        ax.scatter(gx_r, gy_r, c='black', s=20, alpha=0.5, zorder=0)
 
         # Info Box
         math_deg = np.degrees(ship_heading)
@@ -314,14 +312,13 @@ with col_c:
             f"V  : {speed_kn:5.1f} kn\n"
             f"RoT: {rot_deg_min:5.1f} °/m"
         )
-        # Posizione box relativa alla finestra
-        ax.text(-100, 100, info_text, 
-                color='#00ff00', fontsize=12, family='monospace', fontweight='bold',
-                bbox=dict(facecolor='black', alpha=0.7, edgecolor='#00ff00'))
+        ax.text(-75, 60, info_text, 
+                color='black', fontsize=12, family='monospace', fontweight='bold',
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
         
-        # ZOOM OTTIGMIZZATO (120m)
-        ax.set_xlim(-120, 120)
-        ax.set_ylim(-120, 120)
+        # ZOOM OTTIGMIZZATO (80m)
+        ax.set_xlim(-80, 80)
+        ax.set_ylim(-80, 80)
         
     else:
         if show_wash:
