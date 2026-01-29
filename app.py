@@ -8,7 +8,7 @@ from physics import *
 from visualization import *
 import time
 
-st.set_page_config(page_title="ASD Centurion V7.6", layout="wide")
+st.set_page_config(page_title="ASD Centurion V7.7", layout="wide")
 
 st.markdown("""
 <style>
@@ -28,7 +28,6 @@ if "physics" not in st.session_state:
     st.session_state.history_y = []
     st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0})
 
-# NUOVO: Zoom default a 80m
 if "zoom_level" not in st.session_state:
     st.session_state.zoom_level = 80.0
 
@@ -42,18 +41,15 @@ def reset_engines():
     st.session_state.history_x = []
     st.session_state.history_y = []
 
-# NUOVO: Funzione per Reset Sim completo (Fisica + Scia)
 def full_reset_sim():
     st.session_state.physics.reset()
     st.session_state.history_x = []
     st.session_state.history_y = []
 
-# NUOVO: Funzione gestione Zoom
 def update_zoom(delta):
     new_zoom = st.session_state.zoom_level + delta
-    # Limiti di sicurezza (Min 20m, Max 200m)
     if new_zoom < 20: new_zoom = 20
-    if new_zoom > 200: new_zoom = 200
+    if new_zoom > 300: new_zoom = 300
     st.session_state.zoom_level = new_zoom
 
 # --- SOLVER FAST SIDE STEP ---
@@ -127,11 +123,10 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     except: return None
 
 # --- HEADER ---
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.6 ⚓</h1>", unsafe_allow_html=True)
-# Modificato l'header per mostrare lo zoom dinamico nel testo se vuoi, altrimenti statico come prima
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.7 ⚓</h1>", unsafe_allow_html=True)
 st.markdown(f"""
 <div style='text-align: center;'>
-    <b>Versione:</b> 7.6 (Quad-Drag & Black Lines) <br>
+    <b>Versione:</b> 7.7 (Classic Vectors & Transparent Hull) <br>
     <b>Max Speed:</b> 12.7 kt | <b>Zoom:</b> {int(st.session_state.zoom_level)}m
 </div>
 """, unsafe_allow_html=True)
@@ -140,23 +135,20 @@ st.write("---")
 with st.sidebar:
     st.header("Comandi Globali")
     
-    # PULSANTI RESET
     c1, c2 = st.columns(2)
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    # MODIFICATO: Chiama full_reset_sim per cancellare la history
     c2.button("Reset Sim", on_click=full_reset_sim, use_container_width=True)
     
-    # NUOVO: PULSANTI ZOOM
     st.markdown("### 🔍 Controllo Zoom")
     z1, z2, z3 = st.columns([1, 1, 2])
-    z1.button("➕", on_click=update_zoom, args=(-10,), help="Zoom In (Avvicina)", use_container_width=True)
-    z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out (Allontana)", use_container_width=True)
+    z1.button("➕", on_click=update_zoom, args=(-10,), help="Zoom In", use_container_width=True)
+    z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out", use_container_width=True)
     z3.metric("Raggio", f"{int(st.session_state.zoom_level)} m", label_visibility="collapsed")
 
     st.markdown("---")
-    show_wash = st.checkbox("Visualizza Scia", value=True)
+    show_wash = st.checkbox("Mostra Propeller Wash", value=True)
     show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
-    show_construction = st.checkbox("Costruzione Vettoriale (NERO)", value=True)
+    show_construction = st.checkbox("Costruzione Vettoriale", value=True)
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
     cf1, cf2 = st.columns(2)
@@ -260,9 +252,14 @@ with col_c:
         st.error("⚠️ ATTENZIONE: Flusso SX investe DX -> Perdita 20% spinta DX")
 
     fig, ax = plt.subplots(figsize=(10, 12))
-    ax.set_facecolor(COLOR_SEA) # Colore chiaro per contrasto nero
+    ax.set_facecolor(COLOR_SEA) 
     
-    # 1. Disegna Nave
+    # 1. Disegna elementi base (Scafo Trasparente)
+    # 2. Wash (Disegnato PRIMA dello scafo se zorder basso, ma draw_wash è gestito qui per controllo check)
+    if show_wash:
+        draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
+        draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
+    
     draw_static_elements(ax, pos_sx, pos_dx)
     
     # Pivot Point Visual
@@ -279,18 +276,24 @@ with col_c:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=26, length_includes_head=True)
 
-    # COSTRUZIONE VETTORIALE (Linee NERE come richiesto)
+    # COSTRUZIONE VETTORIALE (MODIFICATA: Linee tratteggiate stile V6.62)
     if show_construction and inter is not None and res_ton > 0.1:
         pSX_tip = inter + F_sx_eff*sc
         pDX_tip = inter + F_dx_eff*sc
         pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
         
-        # Parallelogramma NERO (Ben visibile su fondo chiaro)
-        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='black', ls='--', lw=2.0, alpha=0.8, zorder=24)
-        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='black', ls='--', lw=2.0, alpha=0.8, zorder=24)
-        # Linee di prolungamento
-        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.5, alpha=0.5, zorder=23)
-        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1.5, alpha=0.5, zorder=23)
+        # Parallelogramma con linee TRATTEGGIATE (Dashed)
+        # Linea da SX Tip a Resultant Tip
+        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], 
+                color='#333333', linestyle='--', linewidth=1.5, alpha=0.7, zorder=24)
+        
+        # Linea da DX Tip a Resultant Tip
+        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], 
+                color='#333333', linestyle='--', linewidth=1.5, alpha=0.7, zorder=24)
+                
+        # Linee di prolungamento dai motori all'intersezione (dotted)
+        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.0, alpha=0.4, zorder=23)
+        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1.0, alpha=0.4, zorder=23)
     
     if show_prediction:
         state = st.session_state.physics.state
@@ -310,10 +313,8 @@ with col_c:
             ty = dx * s + dy * c
             ax.plot(tx, ty, color='#333333', linewidth=2, alpha=0.4, zorder=0)
 
-        # GRIGLIA NERA (Visibile su fondo chiaro)
+        # GRIGLIA NERA
         grid_spacing = 50.0 
-        
-        # MODIFICATO: Usa la variabile di zoom per il raggio griglia
         view_radius = st.session_state.zoom_level * 2.5 
         
         offset_x = ship_x % grid_spacing
@@ -345,7 +346,6 @@ with col_c:
             f"RoT: {rot_deg_min:5.1f} °/m"
         )
         
-        # Posizione Info Box adattiva allo zoom (opzionale, per ora fissa rispetto all'asse)
         ax.text(-st.session_state.zoom_level*0.9, st.session_state.zoom_level*0.75, info_text, 
                 color='black', fontsize=12, family='monospace', fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
@@ -356,10 +356,7 @@ with col_c:
         ax.set_ylim(-zoom, zoom)
         
     else:
-        if show_wash:
-            draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
-            draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
-        
+        # In modalità statica, mostriamo eliche
         draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
         draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
         
