@@ -1,3 +1,5 @@
+constants.py
+
 import numpy as np
 
 # --- DIMENSIONI & GEOMETRIA ---
@@ -41,3 +43,4 @@ THRUSTER_Y_OFFSET = POS_THRUSTERS_Y
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 800
 COLOR_SEA = '#B0C4DE' # LightSteelBlue
+
