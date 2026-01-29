@@ -8,7 +8,7 @@ from physics import *
 from visualization import *
 import time
 
-st.set_page_config(page_title="ASD Centurion V7.7", layout="wide")
+st.set_page_config(page_title="ASD Centurion V7.8", layout="wide")
 
 st.markdown("""
 <style>
@@ -16,6 +16,12 @@ st.markdown("""
         font-size: 1.8rem !important;
         overflow-wrap: break-word;
         white-space: normal;
+    }
+    /* Stile per i bottoni zoom compatti */
+    div[data-testid="column"] button {
+        height: auto;
+        padding-top: 5px;
+        padding-bottom: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -41,10 +47,12 @@ def reset_engines():
     st.session_state.history_x = []
     st.session_state.history_y = []
 
+# MODIFICATO: Reset Sim ora resetta anche lo Zoom
 def full_reset_sim():
     st.session_state.physics.reset()
     st.session_state.history_x = []
     st.session_state.history_y = []
+    st.session_state.zoom_level = 80.0
 
 def update_zoom(delta):
     new_zoom = st.session_state.zoom_level + delta
@@ -122,12 +130,11 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- HEADER ---
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.7 ⚓</h1>", unsafe_allow_html=True)
-st.markdown(f"""
+# --- HEADER MODIFICATO ---
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.8 ⚓</h1>", unsafe_allow_html=True)
+st.markdown("""
 <div style='text-align: center;'>
-    <b>Versione:</b> 7.7 (Classic Vectors & Transparent Hull) <br>
-    <b>Max Speed:</b> 12.7 kt | <b>Zoom:</b> {int(st.session_state.zoom_level)}m
+    <i>per info contattare stefano.bandi22@gmail.com</i>
 </div>
 """, unsafe_allow_html=True)
 st.write("---")
@@ -139,16 +146,22 @@ with st.sidebar:
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
     c2.button("Reset Sim", on_click=full_reset_sim, use_container_width=True)
     
-    st.markdown("### 🔍 Controllo Zoom")
+    st.markdown("---")
+    
+    # Sezione Visualizzazione e Zoom Spostato
+    st.markdown("### 👁️ Visualizzazione")
+    show_wash = st.checkbox("Mostra Propeller Wash", value=True)
+    show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
+    
+    # ZOOM SPOSTATO QUI SOTTO
+    st.markdown("**Regolazione Zoom:**")
     z1, z2, z3 = st.columns([1, 1, 2])
     z1.button("➕", on_click=update_zoom, args=(-10,), help="Zoom In", use_container_width=True)
     z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out", use_container_width=True)
     z3.metric("Raggio", f"{int(st.session_state.zoom_level)} m", label_visibility="collapsed")
-
-    st.markdown("---")
-    show_wash = st.checkbox("Mostra Propeller Wash", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
+    
     show_construction = st.checkbox("Costruzione Vettoriale", value=True)
+    
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
     cf1, cf2 = st.columns(2)
@@ -254,12 +267,12 @@ with col_c:
     fig, ax = plt.subplots(figsize=(10, 12))
     ax.set_facecolor(COLOR_SEA) 
     
-    # 1. Disegna elementi base (Scafo Trasparente)
-    # 2. Wash (Disegnato PRIMA dello scafo se zorder basso, ma draw_wash è gestito qui per controllo check)
+    # Wash 
     if show_wash:
         draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
         draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
     
+    # Nave e Scafo
     draw_static_elements(ax, pos_sx, pos_dx)
     
     # Pivot Point Visual
@@ -267,7 +280,7 @@ with col_c:
     
     # VETTORI DI FORZA
     sc = 0.7 
-    # Vettori Motori
+    # Vettori Motori (Solid)
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     
@@ -276,24 +289,28 @@ with col_c:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=26, length_includes_head=True)
 
-    # COSTRUZIONE VETTORIALE (MODIFICATA: Linee tratteggiate stile V6.62)
+    # COSTRUZIONE VETTORIALE (MODIFICATA V7.8)
     if show_construction and inter is not None and res_ton > 0.1:
-        pSX_tip = inter + F_sx_eff*sc
-        pDX_tip = inter + F_dx_eff*sc
-        pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
+        pSX_tip = inter + F_sx_eff*sc # Dove arriva il vettore Rosso applicato all'intersezione
+        pDX_tip = inter + F_dx_eff*sc # Dove arriva il vettore Verde applicato all'intersezione
+        pRES_tip = inter + np.array([res_u_total, res_v_total])*sc # Dove arriva la risultante
         
-        # Parallelogramma con linee TRATTEGGIATE (Dashed)
-        # Linea da SX Tip a Resultant Tip
-        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], 
-                color='#333333', linestyle='--', linewidth=1.5, alpha=0.7, zorder=24)
+        # 1. Linee Grigie Tratteggiate (Scheletro)
+        ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='#555555', linestyle=':', linewidth=1.0, alpha=0.5, zorder=23)
+        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='#555555', linestyle=':', linewidth=1.0, alpha=0.5, zorder=23)
         
-        # Linea da DX Tip a Resultant Tip
-        ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], 
-                color='#333333', linestyle='--', linewidth=1.5, alpha=0.7, zorder=24)
-                
-        # Linee di prolungamento dai motori all'intersezione (dotted)
-        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.0, alpha=0.4, zorder=23)
-        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1.0, alpha=0.4, zorder=23)
+        # 2. Vettori di Trasporto Tratteggiati (Colorati)
+        # Il vettore verde trasportato parte dalla punta del rosso (pSX_tip) e va alla risultante
+        ax.arrow(pSX_tip[0], pSX_tip[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, 
+                 color='green', ls='--', lw=1.5, head_width=0, alpha=0.6, zorder=24)
+        
+        # Il vettore rosso trasportato parte dalla punta del verde (pDX_tip) e va alla risultante
+        ax.arrow(pDX_tip[0], pDX_tip[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, 
+                 color='red', ls='--', lw=1.5, head_width=0, alpha=0.6, zorder=24)
+
+        # Linee di prolungamento (proiezione)
+        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.0, alpha=0.3, zorder=23)
+        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1.0, alpha=0.3, zorder=23)
     
     if show_prediction:
         state = st.session_state.physics.state
@@ -331,7 +348,6 @@ with col_c:
         gx_r = gx * c - gy * s
         gy_r = gx * s + gy * c
         
-        # Punti Neri e Grandi
         ax.scatter(gx_r, gy_r, c='black', s=20, alpha=0.5, zorder=0)
 
         # Info Box
@@ -350,13 +366,12 @@ with col_c:
                 color='black', fontsize=12, family='monospace', fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
         
-        # ZOOM OTTIGMIZZATO DINAMICO
+        # ZOOM 
         zoom = st.session_state.zoom_level
         ax.set_xlim(-zoom, zoom)
         ax.set_ylim(-zoom, zoom)
         
     else:
-        # In modalità statica, mostriamo eliche
         draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
         draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
         
