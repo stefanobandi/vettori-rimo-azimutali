@@ -58,6 +58,7 @@ class PhysicsEngine:
         v = self.state[4]
         r = self.state[5]
 
+        # Forze Motori
         rad_l = math.radians(left_angle)
         rad_r = math.radians(right_angle)
 
@@ -68,20 +69,25 @@ class PhysicsEngine:
 
         X_thrust = fx_l + fx_r
         Y_thrust = fy_l + fy_r
-
-        # Momento (r x F) - Segni corretti
+        
+        # Momento Motori
         moment_l = (-POS_THRUSTERS_X * fx_l) - (POS_THRUSTERS_Y * fy_l)
         moment_r = (POS_THRUSTERS_X * fx_r) - (POS_THRUSTERS_Y * fy_r)
         N_thrust = moment_l + moment_r
 
-        # Damping
+        # --- DAMPING QUADRATICO (V7.6) ---
+        # Resistenza = -C * v * |v|
+        
         u_at_pivot = u - (r * pp_y)
         v_at_pivot = v + (r * pp_x)
         
-        X_damping = -(LINEAR_DAMPING_SURGE * u_at_pivot)
-        Y_damping = -(LINEAR_DAMPING_SWAY * v_at_pivot)
+        X_damping = -(QUADRATIC_DAMPING_SURGE * u_at_pivot * abs(u_at_pivot))
+        Y_damping = -(QUADRATIC_DAMPING_SWAY * v_at_pivot * abs(v_at_pivot))
+        
+        # Rotazione: Manteniamo lineare o mista per evitare instabilità a bassa velocità
         N_damping_rot = -(ANGULAR_DAMPING * r)
         
+        # Momento Indotto (Leva della resistenza laterale)
         N_damping_induced = -(pp_y * Y_damping)
         
         X_total = X_thrust + X_damping
@@ -97,11 +103,12 @@ class PhysicsEngine:
         self.state[4] += v_dot * dt
         self.state[5] += r_dot * dt
         
+        # Smorzamento fine corsa
         if abs(self.state[3]) < 0.001: self.state[3] = 0
         if abs(self.state[4]) < 0.001: self.state[4] = 0
         if abs(self.state[5]) < 0.0001: self.state[5] = 0
 
-        # World dynamics
+        # World Pos
         psi = self.state[2]
         c = math.cos(psi)
         s = math.sin(psi)
