@@ -14,27 +14,30 @@ POS_SKEG_Y = 5.0
 POS_STERN_Y = -12.0    
 
 # Parametri Motori
-# 70 tonnellate totali = 35 ton per motore
 BOLLARD_PULL_PER_ENGINE = 35.0 
-MAX_THRUST = 343233.0   # 35,000 kg * 9.80665 = ~343kN
+MAX_THRUST = 343233.0   # 35 ton -> Newton
 
-# --- FISICA (Tuning 12.7 kt) ---
+# --- FISICA (Tuning Quadratica 12.7 kt) ---
 SHIP_MASS = 800000.0            
 MOMENT_OF_INERTIA = 100000000.0 
 
-# Calcolo Damping:
-# Forza Totale = 2 * 343,233 = 686,466 N
-# Velocità Target = 12.7 kt = 6.53 m/s
-# Damping = F / V = 686466 / 6.53 = ~105,125
-LINEAR_DAMPING_SURGE = 105125.0
-LINEAR_DAMPING_SWAY = 350000.0   # 3.5x Surge (Deriva limitata dallo Skeg)
+# Calcolo Drag Quadratico: F = C * v^2
+# V_max = 12.7 kt = 6.53 m/s
+# F_tot = 686,466 N
+# C_surge = 686466 / (6.53^2) = ~16,100
+QUADRATIC_DAMPING_SURGE = 16100.0
+
+# La resistenza laterale è molto più alta (5-8 volte) per via dello Skeg
+QUADRATIC_DAMPING_SWAY = 120000.0
+
+# Resistenza Rotazionale (mista per stabilità)
 ANGULAR_DAMPING = 40000000.0     
 
 # Offset
 THRUSTER_X_OFFSET = POS_THRUSTERS_X
 THRUSTER_Y_OFFSET = POS_THRUSTERS_Y
 
-# Visualizzazione
+# Visualizzazione (Light Mode per contrasto Nero)
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 800
-COLOR_SEA = (20, 30, 40)
+COLOR_SEA = '#B0C4DE' # LightSteelBlue
