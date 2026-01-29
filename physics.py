@@ -8,9 +8,8 @@ class PhysicsEngine:
 
     def reset(self):
         # Stato: [x, y, psi, u, v, r]
-        # psi: Heading Math (0=Est, CCW+)
         self.state = np.zeros(6)
-        self.state[2] = math.pi / 2 # Parte puntando a Nord (90° Math)
+        self.state[2] = math.pi / 2 # Prua a Nord (Math 90)
         self.current_pp_y = 0.0 
         self.pivot_mode = "INIT" 
 
@@ -32,7 +31,6 @@ class PhysicsEngine:
         # CASO 2: MANOVRA (V < 1 kn)
         else:
             self.pivot_mode = "FORCE LOGIC"
-            
             rad_l = math.radians(left_angle_deg)
             rad_r = math.radians(right_angle_deg)
             
@@ -107,7 +105,7 @@ class PhysicsEngine:
         c = math.cos(psi)
         s = math.sin(psi)
         
-        # Physics usa Math Angle (0=Est, CCW+)
+        # World dynamics
         x_dot = self.state[3] * c - self.state[4] * s
         y_dot = self.state[3] * s + self.state[4] * c
 
