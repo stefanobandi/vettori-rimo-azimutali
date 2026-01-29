@@ -1,31 +1,32 @@
 import numpy as np
 
-# --- DIMENSIONI & GEOMETRIA ---
-G_ACCEL = 9.80665
+# --- CONFIGURAZIONE FISICA NAVALE (V7.1 - Auto Pivot Skeg) ---
 
-# Posizione Propulsori (Rispetto al centro nave geometrico 0,0)
-POS_THRUSTERS_Y = -12.0
-POS_THRUSTERS_X = 2.7
-BOLLARD_PULL_PER_ENGINE = 35.0 
+# Dimensioni nave (ASD Tug)
+SHIP_WIDTH = 12.0
+SHIP_LENGTH = 32.0
 
-# Dati Nave Reali
-SHIP_LENGTH = 32.50
-SHIP_WIDTH = 11.70
+# Massa e Inerzia
+SHIP_MASS = 800000.0     # 800 Tonnellate
+MOMENT_OF_INERTIA = 100000000.0  # Alta inerzia
 
-# --- FISICA "BRICK ON ICE" (Tuning V6.62 - Stable & Heavy) ---
-MASS = 800000.0          # kg 
+# Posizioni Propulsori (A poppa)
+THRUSTER_X_OFFSET = 3.5
+THRUSTER_Y_OFFSET = -12.0 # Esattamente sotto la poppa piatta
 
-# AUMENTATA: 100.000.000 (Era 80M)
-# Rende la nave molto più restia a iniziare a ruotare per errore.
-# Filtra le "sporcizie" vettoriali nei Side Step.
-INERTIA = 100000000.0     
+# Posizioni Chiave Carena (Per calcolo PP)
+POS_SKEG_Y = 5.0    # Punto di resistenza prua (Skeg)
+POS_STERN_Y = -12.0 # Punto di spinta poppa
 
-# --- DAMPING (Freno Idrodinamico) ---
-DAMP_LINEAR_X = 85000.0  # Freno laterale (Invariato - ottimo per Side Step)
-DAMP_LINEAR_Y = 50000.0  # Freno longitudinale (Invariato)
+# Motori
+MAX_THRUST = 750000.0 
 
-# AUMENTATO DRASTICAMENTE: 30.000.000 (Era 12M)
-# Questo è il "segreto": un freno rotazionale alto impedisce che
-# un piccolo disallineamento del vettore forza crei una rotazione continua.
-# La nave tenderà a raddrizzarsi o a ruotare molto lentamente.
-DAMP_ANGULAR = 30000000.0
+# Damping (Resistenze)
+LINEAR_DAMPING_SURGE = 50000.0
+LINEAR_DAMPING_SWAY = 350000.0   # Molto alto per simulare lo Skeg
+ANGULAR_DAMPING = 30000000.0     
+
+# Visualizzazione
+SCREEN_WIDTH = 1200
+SCREEN_HEIGHT = 800
+PIXELS_PER_METER = 10
