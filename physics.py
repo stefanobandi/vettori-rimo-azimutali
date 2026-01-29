@@ -7,92 +7,82 @@ class PhysicsEngine:
         # Stato: [x, y, psi, u, v, r]
         self.state = np.zeros(6)
         
-        # Stato calcolato del Pivot Point (per visualizzazione e debugging)
+        # Variabili per visualizzare il calcolo interno
         self.current_pp_y = 0.0 
-        self.current_pp_x = 0.0
-        self.pivot_mode = "INIT" # "SKEG" o "FORCE"
+        self.pivot_mode = "INIT" 
 
     def normalize_angle(self, angle):
         return angle % (2 * math.pi)
 
     def calculate_dynamic_pivot(self, left_thrust, left_angle_deg, right_thrust, right_angle_deg):
         """
-        Determina la posizione del Pivot Point (PP) basandosi su:
-        1. Velocità (Regime Idrodinamico vs Manovra)
-        2. Bilanciamento Forze (Regime Manovra < 1kn)
+        Calcola la posizione Y del Pivot Point.
+        Logica:
+        - V > 1.0 kn: Idrodinamica (Prua/Skeg)
+        - V < 1.0 kn: Contesa di forze (Skeg vs Motori)
         """
         u = self.state[3]
-        u_kn = u * 1.94384
+        u_kn = u * 1.94384 # m/s -> nodi
         
-        # --- 1. REGIME IDRODINAMICO (Velocità > 1.0 kn) ---
+        # --- CASO 1: NAVIGAZIONE (V > 1 kn) ---
         if u_kn > 1.0:
-            # Avanti veloce: Lo Skeg domina assolutamente
-            self.pivot_mode = "SKEG (FWD)"
-            return 0.0, POS_SKEG_Y # +5.0m
+            self.pivot_mode = "SKEG (AVANTI)"
+            return POS_SKEG_Y # +5.0m
             
         elif u_kn < -1.0:
-            # Indietro veloce: Lo Skeg guida ancora la stabilità (prua segue)
-            # Ma il centro di resistenza arretra leggermente
-            self.pivot_mode = "SKEG (BWD)"
-            return 0.0, 3.0 # +3.0m
+            self.pivot_mode = "SKEG (INDIETRO)"
+            # Anche in retromarcia, la prua profonda fa da "ancora" laterale
+            return 3.0 
             
-        # --- 2. REGIME MANOVRA / STATICO (< 1.0 kn) ---
+        # --- CASO 2: MANOVRA (V < 1 kn) ---
         else:
-            self.pivot_mode = "FORCE MIX"
-            # Qui applichiamo la teoria della "Contesa delle Forze"
+            self.pivot_mode = "FORCE LOGIC"
             
-            # Converti angoli in radianti
+            # 1. Calcolo Componenti Forze
             rad_l = math.radians(left_angle_deg)
             rad_r = math.radians(right_angle_deg)
             
-            # Componenti Forze Motori (Local Frame)
-            # X = Longitudinale, Y = Trasversale
             fx_l = left_thrust * math.cos(rad_l)
             fy_l = left_thrust * math.sin(rad_l)
             fx_r = right_thrust * math.cos(rad_r)
             fy_r = right_thrust * math.sin(rad_r)
             
-            # Analisi Forze
-            # Forza Sway Totale (Valore assoluto combinato - quanto spingiamo di lato?)
-            # Usiamo la somma dei valori assoluti per capire l'INTENZIONE di spinta laterale
-            force_sway_intent = abs(fy_l) + abs(fy_r)
+            # 2. Analisi Intenzione
+            # Quanta forza laterale NETTA stiamo applicando? (Somma vettoriale Y)
+            sway_force_net = abs(fy_l + fy_r)
             
-            # Forza Twist (Differenza longitudinale - quanto stiamo ruotando/controstendendo?)
-            # Se uno spinge avanti e uno indietro, questo valore esplode
-            force_twist_intent = abs(fx_l - fx_r)
+            # Quanta forza rotatoria (TWIST) stiamo applicando? (Differenza X)
+            twist_force_net = abs(fx_l - fx_r)
             
-            # Evitiamo divisioni per zero
-            total_intent = force_sway_intent + force_twist_intent
-            if total_intent < 100.0: # Motori quasi fermi
-                # Default a centro nave o leggermente prua se fermi
-                return 0.0, 2.0 
+            total_force = sway_force_net + twist_force_net
             
-            # RATIO: 1.0 = Solo Sway (90/90), 0.0 = Solo Twist (Avanti/Indietro)
-            ratio = force_sway_intent / total_intent
+            # Se i motori sono a zero o quasi
+            if total_force < 1000.0: 
+                return 2.0 # Valore neutro di default
             
-            # INTERPOLAZIONE
-            # Se Ratio = 1 (90/90) -> PP va sullo SKEG (Prua ferma, poppa ruota) -> Target: POS_SKEG_Y
-            # Se Ratio = 0 (Twist) -> PP va sui MOTORI (Rotazione su se stessi) -> Target: POS_STERN_Y
+            # 3. Ratio (Chi vince?)
+            # Ratio = 1.0 -> Puro Side Step (Vince lo Skeg, PP a Prua)
+            # Ratio = 0.0 -> Puro Twist (Vincono i Motori, PP a Poppa)
+            ratio = sway_force_net / (total_force + 0.1)
             
+            # 4. Interpolazione Lineare
+            # PP = Poppa + (Differenza * Ratio)
             calculated_y = POS_STERN_Y + (POS_SKEG_Y - POS_STERN_Y) * ratio
             
-            self.current_pp_y = calculated_y
-            return 0.0, calculated_y
+            return calculated_y
 
     def update(self, dt, left_thrust, left_angle, right_thrust, right_angle):
         
-        # 1. Calcola DOVE si trova il Pivot Point in questo istante
-        pp_x, pp_y = self.calculate_dynamic_pivot(left_thrust, left_angle, right_thrust, right_angle)
-        
-        # Salva per visualizzazione
-        self.current_pp_x = pp_x
-        self.current_pp_y = pp_y
+        # 1. Calcola il Pivot Point corrente
+        pp_y = self.calculate_dynamic_pivot(left_thrust, left_angle, right_thrust, right_angle)
+        self.current_pp_y = pp_y # Salva per visualizzazione
+        pp_x = 0.0 # Assumiamo simmetria laterale per ora
 
         u = self.state[3]
         v = self.state[4]
         r = self.state[5]
 
-        # --- CALCOLO FORZE MOTORI ---
+        # --- FORZE MOTORI ---
         rad_l = math.radians(left_angle)
         rad_r = math.radians(right_angle)
 
@@ -104,37 +94,36 @@ class PhysicsEngine:
         X_thrust = fx_l + fx_r
         Y_thrust = fy_l + fy_r
 
-        # Momento Motori (Sempre applicato a POS_STERN_Y = -12.0)
-        # Torque = arm * force. Arm is vector from CG to Thruster.
-        # Thrusters are at (+- offset, -12)
+        # Momento Motori (Sempre calcolato rispetto al centro geometrico 0,0)
+        # I motori sono fisicamente a poppa, quindi generano momento.
         moment_l = (-THRUSTER_X_OFFSET * fy_l) - (THRUSTER_Y_OFFSET * fx_l)
         moment_r = (THRUSTER_X_OFFSET * fy_r) - (THRUSTER_Y_OFFSET * fx_r)
         N_thrust = moment_l + moment_r
 
-        # --- DAMPING (APPLICATO AL PIVOT POINT CALCOLATO) ---
-        # La resistenza dell'acqua agisce principalmente nel punto PP calcolato.
+        # --- DAMPING (PIVOT AWARE) ---
+        # Qui usiamo il PP calcolato per applicare la resistenza nel punto giusto
         
-        # Velocità locale nel PP
+        # Velocità locale nel punto PP
         u_at_pivot = u - (r * pp_y)
         v_at_pivot = v + (r * pp_x)
         
-        # Forze Resistenti
+        # Resistenza Lineare (applicata al PP)
         X_damping = -(LINEAR_DAMPING_SURGE * u_at_pivot)
         Y_damping = -(LINEAR_DAMPING_SWAY * v_at_pivot)
         
-        # Momento Resistente Puro (Yaw rate)
+        # Momento Resistente Rotazionale (Puro)
         N_damping_rot = -(ANGULAR_DAMPING * r)
         
-        # Momento Indotto (Leva del Damping rispetto al CG)
-        # Se PP è a prua (pp_y > 0), la resistenza laterale crea un momento che raddrizza la nave
+        # Momento Indotto dal Damping (Leva)
+        # Se il PP non è al centro (0,0), la resistenza applicata lì crea un momento
         N_damping_induced = (pp_x * Y_damping) - (pp_y * X_damping)
         
-        # Totali
+        # Somma Totale
         X_total = X_thrust + X_damping
         Y_total = Y_thrust + Y_damping
         N_total = N_thrust + N_damping_rot + N_damping_induced
 
-        # Integrazione Newton
+        # Integrazione
         u_dot = X_total / SHIP_MASS
         v_dot = Y_total / SHIP_MASS
         r_dot = N_total / MOMENT_OF_INERTIA
@@ -142,13 +131,13 @@ class PhysicsEngine:
         self.state[3] += u_dot * dt
         self.state[4] += v_dot * dt
         self.state[5] += r_dot * dt
-
-        # Deadband
+        
+        # Deadband (Stop completo se quasi fermi)
         if abs(self.state[3]) < 0.001: self.state[3] = 0
         if abs(self.state[4]) < 0.001: self.state[4] = 0
         if abs(self.state[5]) < 0.0001: self.state[5] = 0
 
-        # Posizione World
+        # Posizione Globale
         psi = self.state[2]
         c = math.cos(psi)
         s = math.sin(psi)
