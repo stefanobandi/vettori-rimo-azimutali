@@ -7,28 +7,30 @@ G_ACCEL = 9.80665
 SHIP_LENGTH = 32.50
 SHIP_WIDTH = 11.70
 
-# Posizioni Geometriche (Sistema Visuale: Y=Avanti, X=Destra)
+# Posizioni Geometriche
 POS_THRUSTERS_Y = -12.0
 POS_THRUSTERS_X = 2.7
-POS_SKEG_Y = 5.0       # Target Pivot per Fast Side Step
+POS_SKEG_Y = 5.0       
 POS_STERN_Y = -12.0    
 
 # Parametri Motori
+# 70 tonnellate totali = 35 ton per motore
 BOLLARD_PULL_PER_ENGINE = 35.0 
-MAX_THRUST = 735000.0   # ~75 tonnellate forza
+MAX_THRUST = 343233.0   # 35,000 kg * 9.80665 = ~343kN
 
-# --- FISICA (Tuning per Max Speed 12.7 kt) ---
+# --- FISICA (Tuning 12.7 kt) ---
 SHIP_MASS = 800000.0            
 MOMENT_OF_INERTIA = 100000000.0 
 
-# Damping calibrato: 
-# F_tot = 1.47M Newton. V_max = 6.5 m/s (12.7kt).
-# Coeff = F/V = ~226k
-LINEAR_DAMPING_SURGE = 226000.0
-LINEAR_DAMPING_SWAY = 650000.0   # Piu alto per deriva laterale
-ANGULAR_DAMPING = 40000000.0     # Alto per smorzare oscillazioni
+# Calcolo Damping:
+# Forza Totale = 2 * 343,233 = 686,466 N
+# Velocità Target = 12.7 kt = 6.53 m/s
+# Damping = F / V = 686466 / 6.53 = ~105,125
+LINEAR_DAMPING_SURGE = 105125.0
+LINEAR_DAMPING_SWAY = 350000.0   # 3.5x Surge (Deriva limitata dallo Skeg)
+ANGULAR_DAMPING = 40000000.0     
 
-# Offset Fisici (Mapping coordinate)
+# Offset
 THRUSTER_X_OFFSET = POS_THRUSTERS_X
 THRUSTER_Y_OFFSET = POS_THRUSTERS_Y
 
