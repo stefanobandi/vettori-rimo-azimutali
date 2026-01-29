@@ -1,253 +1,138 @@
 import streamlit as st
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch
+import matplotlib.patches as patches
+from matplotlib.transforms import Affine2D
+import time
+from physics import PhysicsEngine
 from constants import *
-from physics import *
-from visualization import *
 
-st.set_page_config(page_title="ASD Centurion V6.62", layout="wide")
+# Inizializzazione Sessione
+if 'physics' not in st.session_state:
+    st.session_state.physics = PhysicsEngine()
+    st.session_state.last_time = time.time()
+    st.session_state.history_x = []
+    st.session_state.history_y = []
 
-st.markdown("""
-<style>
-    [data-testid="stMetricValue"] {
-        font-size: 1.8rem !important;
-        overflow-wrap: break-word;
-        white-space: normal;
-    }
-    @media (max-width: 640px) {
-        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
-        [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
-    }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(layout="wide", page_title="ASD Physics Check")
 
-if "p1" not in st.session_state:
-    st.session_state.update({"p1": 50, "a1": 0, "p2": 50, "a2": 0, "pp_x": 0.0, "pp_y": 5.30})
+st.title("⚓ ASD Centurion: Manual Physics Check")
+st.markdown("**Verifica Fisica:** Logica Pivot Dinamico (Skeg vs Force Mix)")
 
-def set_engine_state(p1, a1, p2, a2):
-    st.session_state.p1, st.session_state.a1 = p1, a1
-    st.session_state.p2, st.session_state.a2 = p2, a2
+col_controls, col_viz = st.columns([1, 2])
 
-def reset_engines(): set_engine_state(50, 0, 50, 0)
-def reset_pivot(): st.session_state.pp_x, st.session_state.pp_y = 0.0, 5.30
-
-# --- HEADER AGGIORNATO V6.62 ---
-st.markdown("<h1 style='text-align: center;'>⚓ Rimorchiatore ASD Centurion ⚓</h1>", unsafe_allow_html=True)
-st.markdown(f"""
-<div style='text-align: center;'>
-    <p style='font-size: 14px; margin-bottom: 5px;'>Per informazioni contattare stefano.bandi22@gmail.com</p>
-    <b>Versione:</b> 6.62 (Full Pivot Physics) <br>
-    <b>Bollard Pull:</b> 70 ton | <b>Lungh:</b> {int(SHIP_LENGTH)}m | <b>Largh:</b> {int(SHIP_WIDTH)}m
-</div>
-""", unsafe_allow_html=True)
-st.write("---")
-
-with st.sidebar:
-    st.header("Comandi Globali")
-    c1, c2 = st.columns(2)
-    c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
-    c2.button("Reset PP", on_click=reset_pivot, use_container_width=True)
-    st.markdown("---")
-    show_wash = st.checkbox("Visualizza Scia (Propeller Wash)", value=True)
-    show_prediction = st.checkbox("Predizione Movimento (30s) - Beta", value=False)
-    show_construction = st.checkbox("Costruzione Vettoriale", value=False)
-    st.markdown("---")
-    st.markdown("### ↕️ Longitudinali")
-    cf1, cf2 = st.columns(2)
-    cf1.button("⬆️ Tutta AVANTI", on_click=set_engine_state, args=(100,0,100,0), use_container_width=True)
-    cf2.button("🔼 Mezza AVANTI", on_click=set_engine_state, args=(50,0,50,0), use_container_width=True)
-    ca1, ca2 = st.columns(2)
-    ca1.button("⬇️ Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
-    ca2.button("🔽 Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
-    st.markdown("---")
-    st.markdown("### ↔️ Side Step")
-    r1, r2 = st.columns(2)
-    r1.button("⬅️ Fast SX", on_click=apply_fast_side_step, args=("SINISTRA",), use_container_width=True)
-    r2.button("➡️ Fast DX", on_click=apply_fast_side_step, args=("DRITTA",), use_container_width=True)
-    r3, r4 = st.columns(2)
-    r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
-    r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
-    st.markdown("---")
-    st.markdown("### 🔄 Turning on the Spot")
-    ts1, ts2 = st.columns(2)
-    ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
-    ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
-
-pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
-pp_pos = np.array([st.session_state.pp_x, st.session_state.pp_y])
-cg_pos = np.array([0.0, 0.0]) 
-
-ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
-ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
-rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
-
-# Vettori forza teorici (Screen coordinates: Y=Up, X=Right)
-F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
-F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
-
-# Calcolo intersezioni scia (Wash Hit)
-wash_sx_hits_dx = check_wash_hit(pos_sx, -F_sx_eff_v, pos_dx)
-wash_dx_hits_sx = check_wash_hit(pos_dx, -F_dx_eff_v, pos_sx)
-eff_sx, eff_dx = (0.8 if wash_dx_hits_sx else 1.0), (0.8 if wash_sx_hits_dx else 1.0)
-
-# Vettori forza effettivi (con penalità)
-F_sx_eff = F_sx_eff_v * eff_sx
-F_dx_eff = F_dx_eff_v * eff_dx
-ton1_eff, ton2_eff = ton1_set * eff_sx, ton2_set * eff_dx
-
-# Risultanti globali (Screen/Ship frame coincidono a t=0)
-res_u_total = (F_sx_eff[0] + F_dx_eff[0]) # Sway Force (Total X)
-res_v_total = (F_sx_eff[1] + F_dx_eff[1]) # Surge Force (Total Y)
-res_ton = np.sqrt(res_u_total**2 + res_v_total**2)
-direzione_nautica = np.degrees(np.arctan2(res_u_total, res_v_total)) % 360
-
-# --- CALCOLO MOMENTO RISPETTO AL PIVOT POINT (PP) ---
-# M = r x F
-M_tm_PP = ((pos_sx-pp_pos)[0]*F_sx_eff[1] - (pos_sx-pp_pos)[1]*F_sx_eff[0] + 
-           (pos_dx-pp_pos)[0]*F_dx_eff[1] - (pos_dx-pp_pos)[1]*F_dx_eff[0])
-M_knm = M_tm_PP * G_ACCEL
-
-# Calcolo intersezione vettori
-inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2)
-use_weighted = True
-if inter is not None:
-    if np.linalg.norm(inter) <= 50.0: use_weighted = False
-
-# --- LAYOUT PRINCIPALE ---
-col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
-
-with col_l:
-    st.slider("Potenza SX", 0, 100, key="p1", format="%d%%")
-    st.metric("Spinta SX", f"{ton1_eff:.1f} t")
-    st.slider("Azimuth SX", 0, 360, key="a1", format="%03d°")
-    st.pyplot(plot_clock(st.session_state.a1, 'red'))
+with col_controls:
+    st.subheader("⚙️ Comandi Manuali")
     
-with col_r:
-    st.slider("Potenza DX", 0, 100, key="p2", format="%d%%")
-    st.metric("Spinta DX", f"{ton2_eff:.1f} t")
-    st.slider("Azimuth DX", 0, 360, key="a2", format="%03d°")
-    st.pyplot(plot_clock(st.session_state.a2, 'green'))
+    # Rimosso il selettore preset per focus manuale assoluto
+    st.info("Usa gli slider per testare la risposta fisica.")
 
-with col_c:
-    with st.expander("📍 Pivot Point (Visual & Auto)", expanded=True):
-        pcol1, pcol2 = st.columns(2)
-        pcol1.slider("Longitudinale (Y)", -16.0, 16.0, key="pp_y", format="%.2fm")
-        pcol2.slider("Laterale (X)", -5.0, 5.0, key="pp_x", format="%.2fm")
-    
-    if wash_dx_hits_sx:
-        st.error("⚠️ ATTENZIONE: Flusso DX investe SX -> Perdita 20% spinta SX")
-    if wash_sx_hits_dx:
-        st.error("⚠️ ATTENZIONE: Flusso SX investe DX -> Perdita 20% spinta DX")
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        st.write("**Port (SX)**")
+        p_l = st.slider("Power %", 0, 100, 0, key="pl")
+        a_l = st.slider("Angle °", 0, 360, 0, step=10, key="al")
+    with col_p2:
+        st.write("**Stbd (DX)**")
+        p_r = st.slider("Power %", 0, 100, 0, key="pr")
+        a_r = st.slider("Angle °", 0, 360, 0, step=10, key="ar")
 
-    fig, ax = plt.subplots(figsize=(10, 12))
+    if st.button("Reset Totale"):
+        st.session_state.physics = PhysicsEngine()
+        st.session_state.history_x = []
+        st.session_state.history_y = []
+
+# --- LOOP FISICO ---
+current_time = time.time()
+dt = current_time - st.session_state.last_time
+st.session_state.last_time = current_time
+if dt > 0.1: dt = 0.1
+
+thrust_l_newton = (p_l / 100.0) * MAX_THRUST
+thrust_r_newton = (p_r / 100.0) * MAX_THRUST
+
+# Update
+st.session_state.physics.update(dt, thrust_l_newton, a_l, thrust_r_newton, a_r)
+
+# Recupera dati per UI
+state = st.session_state.physics.state
+pp_y = st.session_state.physics.current_pp_y
+mode = st.session_state.physics.pivot_mode
+
+# Traccia
+st.session_state.history_x.append(state[0])
+st.session_state.history_y.append(state[1])
+if len(st.session_state.history_x) > 500:
+    st.session_state.history_x.pop(0)
+    st.session_state.history_y.pop(0)
+
+# --- VISUALIZZAZIONE ---
+with col_viz:
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_facecolor('#141E28')
     
-    # --- PREDIZIONE V6.62 (Full Pivot Support) ---
-    traj = []
-    if show_prediction:
-        surge_n = res_v_total * 1000 * G_ACCEL 
-        sway_n  = res_u_total * 1000 * G_ACCEL 
-        torque_nm = M_tm_PP * 1000 * G_ACCEL
-        
-        # ORA PASSIAMO SIA X CHE Y
-        traj = predict_trajectory(surge_n, sway_n, torque_nm, 
-                                  pp_x_offset=st.session_state.pp_x, 
-                                  pp_y_offset=st.session_state.pp_y, 
-                                  total_time=30.0)
-        
-        for idx, (tx, ty, th) in enumerate(traj):
-            alpha = (idx + 1) / (len(traj) + 5) * 0.4
-            draw_hull_silhouette(ax, tx, ty, th, alpha=alpha)
-            
-    draw_static_elements(ax, pos_sx, pos_dx)
-    
-    if show_wash:
-        draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
-        draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
-        
-    draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
-    draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
-    
-    origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
-    sc = 0.7
-    
-    if not show_construction:
-        ax.plot([pos_sx[0], origin_res[0]], [pos_sx[1], origin_res[1]], 'r--', lw=1, alpha=0.3)
-        ax.plot([pos_dx[0], origin_res[0]], [pos_dx[1], origin_res[1]], 'g--', lw=1, alpha=0.3)
-    else:
-        if inter is not None:
-            v_sx_len = np.linalg.norm(F_sx_eff)*sc; v_dx_len = np.linalg.norm(F_dx_eff)*sc
-            ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.08, head_width=min(0.3, v_sx_len*0.4), head_length=min(0.4, v_sx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
-            ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.08, head_width=min(0.3, v_dx_len*0.4), head_length=min(0.4, v_dx_len*0.5), alpha=0.3, zorder=6, length_includes_head=True)
-            pSX_tip = inter + F_sx_eff*sc; pDX_tip = inter + F_dx_eff*sc; pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
-            ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
-            ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='gray', ls='--', lw=1.0, alpha=0.8, zorder=5)
-            ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1, alpha=0.4); ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 'g:', lw=1, alpha=0.4)
-            
-    ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
-    ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=4, alpha=0.7, length_includes_head=True)
-    
-    if res_ton > 0.1:
-        v_res_len = res_ton * sc
-        ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=8, length_includes_head=True)
-    
-    ax.scatter(st.session_state.pp_x, st.session_state.pp_y, c='black', s=120, zorder=15, label="Pivot Point")
-    
-    if abs(M_tm_PP) > 1:
-        p_s, p_e = (5, 24) if M_tm_PP > 0 else (-5, 24), (-5, 24) if M_tm_PP > 0 else (5, 24)
-        ax.add_patch(FancyArrowPatch(p_s, p_e, connectionstyle=f"arc3,rad={0.3 if M_tm_PP>0 else -0.3}", arrowstyle="Simple, tail_width=2, head_width=10, head_length=10", color='purple', alpha=0.8, zorder=5))
-    
-    # --- ZOOM DINAMICO QUADRATO (FIXED AREA) ---
-    if show_prediction and len(traj) > 0:
-        base_x = [-15, 15]
-        base_y = [-25, 20]
-        traj_x = [p[0] for p in traj]
-        traj_y = [p[1] for p in traj]
-        
-        all_x = base_x + traj_x
-        all_y = base_y + traj_y
-        
-        min_x, max_x = min(all_x), max(all_x)
-        min_y, max_y = min(all_y), max(all_y)
-        
-        center_x = (min_x + max_x) / 2
-        center_y = (min_y + max_y) / 2
-        
-        span_x = max_x - min_x
-        span_y = max_y - min_y
-        max_span = max(span_x, span_y) * 1.1 
-        
-        ax.set_xlim(center_x - max_span/2, center_x + max_span/2)
-        ax.set_ylim(center_y - max_span/2, center_y + max_span/2)
-    else:
-        ax.set_xlim(-30, 30)
-        ax.set_ylim(-40, 35)
-        
+    cx, cy = state[0], state[1]
+    window = 80
+    ax.set_xlim(cx - window, cx + window)
+    ax.set_ylim(cy - window, cy + window)
     ax.set_aspect('equal')
-    ax.axis('off')
-    st.pyplot(fig)
+    ax.grid(True, color='#2A3B4C', linestyle='--', alpha=0.5)
+
+    # Scia azzurra
+    ax.plot(st.session_state.history_x, st.session_state.history_y, color='#64C8FF', linewidth=1, alpha=0.6)
+
+    # Matrice Trasformazione Nave
+    tr = Affine2D().rotate(-state[2]).translate(cx, cy) + ax.transData
+
+    # Corpo Nave
+    hull = patches.Rectangle((-SHIP_WIDTH/2, -SHIP_LENGTH/2), SHIP_WIDTH, SHIP_LENGTH, color='#464646', zorder=2)
+    hull.set_transform(tr)
+    ax.add_patch(hull)
     
-    if show_prediction:
-        st.markdown("<p style='color: blue; text-align: center; font-weight: bold;'>Predizione Attiva: Punti A(Pivot) - B(Poppa)</p>", unsafe_allow_html=True)
+    # Prua
+    bow = patches.Polygon([(-SHIP_WIDTH/2, SHIP_LENGTH/2), (SHIP_WIDTH/2, SHIP_LENGTH/2), (0, SHIP_LENGTH/2 + 4)], color='#505050', zorder=2)
+    bow.set_transform(tr)
+    ax.add_patch(bow)
 
-# --- TABELLA RIEPILOGATIVA ---
-st.write("---")
-st.subheader("📋 Telemetria di Manovra")
+    # Disegna Skeg (Area Blu a Prua - Visual Reference)
+    skeg_area = patches.Rectangle((-0.5, POS_SKEG_Y-1), 1, 2, color='blue', alpha=0.5, zorder=3)
+    skeg_area.set_transform(tr)
+    ax.add_patch(skeg_area)
 
-c_data1, c_data2, c_data3, c_data4 = st.columns(4)
-with c_data1:
-    st.metric("Spinta Risultante", f"{res_ton:.1f} t")
-with c_data2:
-    st.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
-with c_data3:
-    st.metric("Momento (PP)", f"{int(M_tm_PP)} t*m", delta_color="off")
-with c_data4:
-    st.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+    # Vettori Propulsori
+    def draw_thruster(x_local, y_local, angle_deg, thrust_pct, color):
+        if thrust_pct == 0: return
+        vec_len = (thrust_pct / 100.0) * 15
+        angle_rad = np.radians(angle_deg)
+        # In matplotlib arrow, dx/dy sono offsets
+        dx = vec_len * np.sin(angle_rad)
+        dy = vec_len * np.cos(angle_rad)
+        arrow = patches.Arrow(x_local, y_local, dx, dy, width=2, color=color, zorder=4)
+        arrow.set_transform(tr)
+        ax.add_patch(arrow)
 
-df_engines = pd.DataFrame({
-    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
-    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
-    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
-})
-st.table(df_engines)
+    draw_thruster(-THRUSTER_X_OFFSET, THRUSTER_Y_OFFSET, a_l, p_l, '#FF3232')
+    draw_thruster(THRUSTER_X_OFFSET, THRUSTER_Y_OFFSET, a_r, p_r, '#32FF32')
+
+    # PIVOT POINT MARKER (Giallo)
+    # Questo è il punto che si muove in base alla logica
+    pp_marker = patches.Circle((0, pp_y), radius=0.8, color='#FFFF00', zorder=5)
+    pp_marker.set_transform(tr)
+    ax.add_patch(pp_marker)
+
+    # DATI IN SOVRAIMPRESSIONE
+    sog_kn = np.sqrt(state[3]**2 + state[4]**2) * 1.94
+    info_text = (
+        f"SOG: {sog_kn:.1f} kn\n"
+        f"HDG: {np.degrees(state[2]):.1f}°\n"
+        f"ROT: {np.degrees(state[5]):.2f} °/s\n\n"
+        f"PIVOT Y: {pp_y:.1f} m\n"
+        f"LOGIC: {mode}"
+    )
+    ax.text(cx - window + 5, cy + window - 5, info_text, 
+            color='white', fontsize=11, family='monospace', 
+            bbox=dict(facecolor='black', alpha=0.6))
+
+    st.pyplot(fig)
+    time.sleep(0.05)
+    st.rerun()
