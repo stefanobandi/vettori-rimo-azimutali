@@ -1,5 +1,3 @@
-constants.py
-
 import numpy as np
 
 # --- DIMENSIONI & GEOMETRIA ---
