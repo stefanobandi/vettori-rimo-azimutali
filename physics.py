@@ -8,12 +8,11 @@ class PhysicsEngine:
 
     def reset(self):
         # Stato: [x, y, psi, u, v, r]
-        # x, y: Posizione Mondo
-        # psi: Angolo Prua (0=Nord, CW+)
-        # u: Surge (Avanti/Indietro)
-        # v: Sway (Destra/Sinistra)
-        # r: Yaw Rate
+        # x, y: Mondo
+        # psi: Heading Math (0=Est, CCW+)
         self.state = np.zeros(6)
+        # Imposta heading iniziale a 90 gradi Math (Prua a Nord)
+        self.state[2] = math.pi / 2 
         self.current_pp_y = 0.0 
         self.pivot_mode = "INIT" 
 
@@ -22,7 +21,9 @@ class PhysicsEngine:
 
     def calculate_dynamic_pivot(self, left_thrust, left_angle_deg, right_thrust, right_angle_deg):
         """
-        Calcola la posizione Y del Pivot Point (V7.1 Logic).
+        Calcola Pivot Point V7.1:
+        - V > 1kn: Skeg (Prua)
+        - V < 1kn: Contesa Forze (Skeg vs Motori)
         """
         u = self.state[3]
         u_kn = u * 1.94384 
@@ -31,7 +32,6 @@ class PhysicsEngine:
         if u_kn > 1.0:
             self.pivot_mode = "SKEG (AVANTI)"
             return POS_SKEG_Y 
-            
         elif u_kn < -1.0:
             self.pivot_mode = "SKEG (INDIETRO)"
             return 3.0 
@@ -40,38 +40,27 @@ class PhysicsEngine:
         else:
             self.pivot_mode = "FORCE LOGIC"
             
-            # Calcolo Componenti Forze
             rad_l = math.radians(left_angle_deg)
             rad_r = math.radians(right_angle_deg)
             
-            # Nota: In questo sistema locale:
-            # X = Longitudinale (Prua/Poppa)
-            # Y = Trasversale (Dritta/Sinistra)
-            # 0 gradi = Prua
+            # Componenti locali (X=Prua, Y=Dritta)
             fx_l = left_thrust * math.cos(rad_l)
             fy_l = left_thrust * math.sin(rad_l)
             fx_r = right_thrust * math.cos(rad_r)
             fy_r = right_thrust * math.sin(rad_r)
             
-            # Analisi Intenzione
             sway_force_net = abs(fy_l + fy_r)
             twist_force_net = abs(fx_l - fx_r)
             
             total_force = sway_force_net + twist_force_net
+            if total_force < 1000.0: return 2.0 
             
-            if total_force < 1000.0: 
-                return 2.0 # Default neutro
-            
-            # Ratio (Chi vince?)
-            # 1.0 = Puro Sway (Vince Skeg -> Prua)
-            # 0.0 = Puro Twist (Vince Motore -> Poppa)
             ratio = sway_force_net / (total_force + 0.1)
-            
             calculated_y = POS_STERN_Y + (POS_SKEG_Y - POS_STERN_Y) * ratio
             return calculated_y
 
     def update(self, dt, left_thrust, left_angle, right_thrust, right_angle):
-        # 1. Pivot Point Dinamico
+        # 1. Pivot Point
         pp_y = self.calculate_dynamic_pivot(left_thrust, left_angle, right_thrust, right_angle)
         self.current_pp_y = pp_y 
         pp_x = 0.0 
@@ -80,13 +69,7 @@ class PhysicsEngine:
         v = self.state[4]
         r = self.state[5]
 
-        # --- FORZE MOTORI ---
-        # Conversione Angoli: Input 0° = Nord (Avanti).
-        # Math: 0° = Est.
-        # Adattiamo le componenti:
-        # Fx (Longitudinale) = Thrust * cos(angle)
-        # Fy (Trasversale) = Thrust * sin(angle)
-        
+        # --- FORZE (System: X=Prua, Y=Dritta) ---
         rad_l = math.radians(left_angle)
         rad_r = math.radians(right_angle)
 
@@ -98,20 +81,15 @@ class PhysicsEngine:
         X_thrust = fx_l + fx_r
         Y_thrust = fy_l + fy_r
 
-        # Momento Motori
-        # Braccio X * Forza Y - Braccio Y * Forza X
-        # SX: (-offset, -12)
-        # DX: (+offset, -12)
-        moment_l = (-THRUSTER_X_OFFSET * fy_l) - (THRUSTER_Y_OFFSET * fx_l)
-        moment_r = (THRUSTER_X_OFFSET * fy_r) - (THRUSTER_Y_OFFSET * fx_r)
-        
-        # Correzione Segno Momento:
-        # Una spinta a Dritta (+Y) a Poppa (-Y_pos) deve creare rotazione Antioraria (Prua a Sx)?
-        # -12 * +F = negativo. 
-        # Verifichiamo standard: +Momento = Rotazione Oraria (Nautico) o Antioraria (Math)?
-        # Math: CCW è positivo.
-        # Se spingo a Dritta a poppa, la prua va a Sinistra (CCW).
-        # Calcolo: -(-12) * F_pos = +12F. Positivo = CCW. OK.
+        # Momento (r x F) -> CCW+
+        # Motori a Y = -12. 
+        # Spinta a Dritta (+Fy) a poppa genera rotazione oraria della nave?
+        # No, spinta laterale a poppa fa ruotare la prua dalla parte opposta.
+        # Spinta DX a poppa -> Poppa va a DX -> Prua va a SX (CCW).
+        # Math: Torque = x*Fy - y*Fx.
+        # SX: (-2.7, -12). DX: (2.7, -12).
+        moment_l = (-POS_THRUSTERS_X * fy_l) - (POS_THRUSTERS_Y * fx_l)
+        moment_r = (POS_THRUSTERS_X * fy_r) - (POS_THRUSTERS_Y * fx_r)
         N_thrust = moment_l + moment_r
 
         # --- DAMPING ---
@@ -128,7 +106,7 @@ class PhysicsEngine:
         Y_total = Y_thrust + Y_damping
         N_total = N_thrust + N_damping_rot + N_damping_induced
 
-        # Integrazione
+        # --- INTEGRAZIONE ---
         u_dot = X_total / SHIP_MASS
         v_dot = Y_total / SHIP_MASS
         r_dot = N_total / MOMENT_OF_INERTIA
@@ -142,32 +120,19 @@ class PhysicsEngine:
         if abs(self.state[4]) < 0.001: self.state[4] = 0
         if abs(self.state[5]) < 0.0001: self.state[5] = 0
 
-        # Posizione Globale
-        # psi: Heading. Math convenzione (0=Est, CCW+). 
-        # Ma noi usiamo 0=Nord per input.
-        # Manteniamo psi come angolo matematico standard rispetto al nord ruotato?
-        # Semplifichiamo: psi è l'angolo di prua rispetto al Nord (0). CW (Orario) è Positivo?
-        # NO, in fisica `r` (Yaw Rate) positivo è CCW solitamente.
-        # Invertiamo il segno di r_dot per l'aggiornamento heading se vogliamo visualizzazione Nautica (CW+)
-        # OPPURE manteniamo standard Math (CCW+) e invertiamo solo in visualizzazione.
-        # Manteniamo Math Standard (CCW+) nel motore fisico.
-        
+        # World Pos (Math Angle)
         psi = self.state[2]
         c = math.cos(psi)
         s = math.sin(psi)
         
-        # Nota: Qui assumiamo 0 = Nord, Y = Nord, X = Est.
-        # x_dot = u * sin(psi) + v * cos(psi) ?
-        # Standard Marine Body to NED:
-        # North_dot = u * cos(psi) - v * sin(psi)
-        # East_dot  = u * sin(psi) + v * cos(psi)
-        # Assumendo psi=0 (Nord).
-        
-        # Rotazione vettoriale standard 2D
-        x_dot = self.state[3] * s + self.state[4] * c # Componente Est
-        y_dot = self.state[3] * c - self.state[4] * s # Componente Nord
+        # Rotazione vettori velocità locale -> globale
+        # u è lungo asse X locale (Heading), v lungo asse Y locale (+90 deg)
+        # x_dot = u * cos(psi) - v * sin(psi)
+        # y_dot = u * sin(psi) + v * cos(psi)
+        x_dot = self.state[3] * c - self.state[4] * s
+        y_dot = self.state[3] * s + self.state[4] * c
 
         self.state[0] += x_dot * dt
         self.state[1] += y_dot * dt
-        self.state[2] += self.state[5] * dt # CCW positivo
+        self.state[2] += self.state[5] * dt
         self.state[2] = self.normalize_angle(self.state[2])
