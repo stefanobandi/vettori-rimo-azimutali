@@ -47,7 +47,6 @@ def reset_engines():
     st.session_state.history_x = []
     st.session_state.history_y = []
 
-# MODIFICATO: Reset Sim ora resetta anche lo Zoom
 def full_reset_sim():
     st.session_state.physics.reset()
     st.session_state.history_x = []
@@ -130,7 +129,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- HEADER MODIFICATO ---
+# --- HEADER ---
 st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.8 ⚓</h1>", unsafe_allow_html=True)
 st.markdown("""
 <div style='text-align: center;'>
@@ -148,19 +147,18 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Sezione Visualizzazione e Zoom Spostato
     st.markdown("### 👁️ Visualizzazione")
     show_wash = st.checkbox("Mostra Propeller Wash", value=True)
     show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
     
-    # ZOOM SPOSTATO QUI SOTTO
     st.markdown("**Regolazione Zoom:**")
     z1, z2, z3 = st.columns([1, 1, 2])
     z1.button("➕", on_click=update_zoom, args=(-10,), help="Zoom In", use_container_width=True)
     z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out", use_container_width=True)
     z3.metric("Raggio", f"{int(st.session_state.zoom_level)} m", label_visibility="collapsed")
     
-    show_construction = st.checkbox("Costruzione Vettoriale", value=True)
+    # MODIFICA: Default a False
+    show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     
     st.markdown("---")
     st.markdown("### ↕️ Longitudinali")
@@ -278,9 +276,8 @@ with col_c:
     # Pivot Point Visual
     ax.scatter(0, pp_y_auto, c='yellow', s=150, zorder=20, edgecolors='black', label="Pivot")
     
-    # VETTORI DI FORZA
+    # VETTORI DI FORZA (Solid)
     sc = 0.7 
-    # Vettori Motori (Solid)
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     
@@ -291,22 +288,22 @@ with col_c:
 
     # COSTRUZIONE VETTORIALE (MODIFICATA V7.8)
     if show_construction and inter is not None and res_ton > 0.1:
-        pSX_tip = inter + F_sx_eff*sc # Dove arriva il vettore Rosso applicato all'intersezione
-        pDX_tip = inter + F_dx_eff*sc # Dove arriva il vettore Verde applicato all'intersezione
-        pRES_tip = inter + np.array([res_u_total, res_v_total])*sc # Dove arriva la risultante
+        pSX_tip = inter + F_sx_eff*sc
+        pDX_tip = inter + F_dx_eff*sc
+        pRES_tip = inter + np.array([res_u_total, res_v_total])*sc
         
         # 1. Linee Grigie Tratteggiate (Scheletro)
         ax.plot([pSX_tip[0], pRES_tip[0]], [pSX_tip[1], pRES_tip[1]], color='#555555', linestyle=':', linewidth=1.0, alpha=0.5, zorder=23)
         ax.plot([pDX_tip[0], pRES_tip[0]], [pDX_tip[1], pRES_tip[1]], color='#555555', linestyle=':', linewidth=1.0, alpha=0.5, zorder=23)
         
-        # 2. Vettori di Trasporto Tratteggiati (Colorati)
+        # 2. Vettori di Trasporto Tratteggiati (Colorati) - RESI PIÙ VISIBILI (lw=2.0, alpha=0.9)
         # Il vettore verde trasportato parte dalla punta del rosso (pSX_tip) e va alla risultante
         ax.arrow(pSX_tip[0], pSX_tip[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, 
-                 color='green', ls='--', lw=1.5, head_width=0, alpha=0.6, zorder=24)
+                 color='green', ls='--', lw=2.0, head_width=0, alpha=0.9, zorder=24)
         
         # Il vettore rosso trasportato parte dalla punta del verde (pDX_tip) e va alla risultante
         ax.arrow(pDX_tip[0], pDX_tip[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, 
-                 color='red', ls='--', lw=1.5, head_width=0, alpha=0.6, zorder=24)
+                 color='red', ls='--', lw=2.0, head_width=0, alpha=0.9, zorder=24)
 
         # Linee di prolungamento (proiezione)
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 'r:', lw=1.0, alpha=0.3, zorder=23)
