@@ -5,19 +5,29 @@ from matplotlib.path import Path
 from matplotlib.transforms import Affine2D
 
 def draw_wash(ax, pos, angle_deg, power_pct):
+    # Mostra la scia solo se c'è un minimo di potenza
     if power_pct < 5: return
+    
     angle_wash_rad = np.radians(angle_deg + 180)
-    length = (power_pct / 100) * 22.0 
+    
+    # Lunghezza dinamica basata sulla potenza
+    length = (power_pct / 100) * 25.0 
+    
     w_start = 2.2
-    w_end = 7.5
+    w_end = 8.0 # Scia che si allarga
+    
     d_vec = np.array([np.sin(angle_wash_rad), np.cos(angle_wash_rad)])
     p_vec = np.array([-d_vec[1], d_vec[0]])
+    
     p1 = pos + p_vec * (w_start / 2)
     p2 = pos - p_vec * (w_start / 2)
     p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
     p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
+    
     verts = [p1, p2, p3, p4]
-    ax.add_patch(plt.Polygon(verts, facecolor='white', alpha=0.5, edgecolor='none', zorder=1.2))
+    
+    # MODIFICA: Colore Azzurro (#00FFFF) semi-trasparente (alpha=0.3)
+    ax.add_patch(plt.Polygon(verts, facecolor='#00FFFF', alpha=0.3, edgecolor='none', zorder=1.0))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     angle_rad = np.radians(angle_deg + 90)
@@ -63,14 +73,18 @@ def get_hull_path():
 def draw_static_elements(ax, pos_sx, pos_dx):
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
-    # MODIFICA: Colore interno scafo cambiato a 'white' (era #333333)
-    ax.add_patch(PathPatch(Path(verts, codes), facecolor='white', edgecolor='black', lw=2, zorder=1))
+    
+    # MODIFICA: facecolor='none' per rendere lo scafo trasparente
+    ax.add_patch(PathPatch(Path(verts, codes), facecolor='none', edgecolor='black', lw=2, zorder=5))
+    
     hw, bow_tip, shoulder = 5.85, 16.25, 8.0
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
-    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#111111', lw=6, capstyle='round', zorder=2))
-    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
-    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
+    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#111111', lw=6, capstyle='round', zorder=6))
+    
+    # Cerchi indicativi posizione thruster
+    ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=4))
+    ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=4))
 
 def draw_hull_silhouette(ax, x, y, heading_deg, alpha=0.1):
     path_data = get_hull_path()
