@@ -17,7 +17,7 @@ def draw_wash(ax, pos, angle_deg, power_pct):
     p3 = pos + (d_vec * length) - p_vec * (w_end / 2)
     p4 = pos + (d_vec * length) + p_vec * (w_end / 2)
     verts = [p1, p2, p3, p4]
-    ax.add_patch(plt.Polygon(verts, facecolor='#00f2ff', alpha=0.25, edgecolor='none', zorder=1.2))
+    ax.add_patch(plt.Polygon(verts, facecolor='white', alpha=0.5, edgecolor='none', zorder=1.2))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
     angle_rad = np.radians(angle_deg + 90)
@@ -63,11 +63,11 @@ def get_hull_path():
 def draw_static_elements(ax, pos_sx, pos_dx):
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
-    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#cccccc', edgecolor='#555555', lw=2, zorder=1))
+    ax.add_patch(PathPatch(Path(verts, codes), facecolor='#333333', edgecolor='black', lw=2, zorder=1))
     hw, bow_tip, shoulder = 5.85, 16.25, 8.0
     fender_data = [(Path.MOVETO, (hw, shoulder)), (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)), (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder))]
     f_codes, f_verts = zip(*fender_data)
-    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#333333', lw=8, capstyle='round', zorder=2))
+    ax.add_patch(PathPatch(Path(f_verts, f_codes), facecolor='none', edgecolor='#111111', lw=6, capstyle='round', zorder=2))
     ax.add_patch(plt.Circle(pos_sx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
     ax.add_patch(plt.Circle(pos_dx, 2.0, color='black', fill=False, lw=1, ls='--', alpha=0.3, zorder=2))
 
