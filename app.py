@@ -70,60 +70,35 @@ def update_zoom(delta):
     if new_zoom > 300: new_zoom = 300
     st.session_state.zoom_level = new_zoom
 
-# --- SOLVER FAST SIDE STEP (Logica V7.6 Ripristinata e Adattata) ---
+# --- SOLVER FAST SIDE STEP (Logica V7.6 Ripristinata) ---
 def solve_fast_side_step(mode):
-    # Logica: Trovare l'equilibrio dei momenti affinché la risultante passi per il Pivot Point.
-    # Il "punto di intersezione" dei vettori deve avvenire a Y = pp_manual_y.
-    
     Y_target = st.session_state.pp_manual_y
-    
-    # Calcolo del braccio dy dinamico: Distanza tra linea motori e linea pivot
-    # Se Motori=-12 e Pivot=+5 -> dy = -12 - 5 = -17 (come nella V7.6 originale)
     dy = POS_THRUSTERS_Y - Y_target
-    
-    # Evitiamo divisioni per zero se il pivot è esattamente sulla linea motori
     if abs(dy) < 0.1: dy = -0.1
     
     dx_sx = -POS_THRUSTERS_X
     dx_dx = POS_THRUSTERS_X
     
     if mode == "DRITTA":
-        # Impostiamo il Motore Master (diciamo SX) per spingere
         p_m, a_m = 50.0, 50.0
         rad_m = np.radians(a_m)
-        
-        # Scomposizione Forza Master (Assi nave: Y=Nord/Surge, X=Est/Sway)
-        Fy_m = p_m * np.cos(rad_m) # Componente Longitudinale
-        Fx_m = p_m * np.sin(rad_m) # Componente Laterale
-        
-        # Calcolo Momento generato dal Master rispetto al Pivot Point
-        # M = Forza * Braccio. 
-        # Momento = (Pos_Motore_X * Fy) - (Pos_Motore_Y_relativa * Fx)
+        Fy_m = p_m * np.cos(rad_m)
+        Fx_m = p_m * np.sin(rad_m)
         M_m = (dx_sx * Fy_m) - (dy * Fx_m)
         
-        # Il Slave (DX) deve annullare la spinta longitudinale (Surge) per fare Side Step puro
         Fy_s = -Fy_m 
-        
-        # Risolviamo per Fx_s (Sway Slave) affinché Momento Totale = 0
-        # M_s = (dx_dx * Fy_s) - (dy * Fx_s)
-        # M_m + M_s = 0  =>  M_m + (dx_dx * Fy_s) - (dy * Fx_s) = 0
-        # dy * Fx_s = M_m + (dx_dx * Fy_s)
         Fx_s = (M_m + dx_dx * Fy_s) / dy
         
-        # Ricostruzione Vettore Slave
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
-        rad_s = np.arctan2(Fx_s, Fy_s) # atan2(x, y) per azimuth nautico
+        rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
-        
         set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
         
     else: # SINISTRA
-        # Master è il DX
         p_m, a_m = 50.0, 310.0
         rad_m = np.radians(a_m)
         Fy_m = p_m * np.cos(rad_m)
         Fx_m = p_m * np.sin(rad_m)
-        
         M_m = (dx_dx * Fy_m) - (dy * Fx_m)
         
         Fy_s = -Fy_m
@@ -132,14 +107,54 @@ def solve_fast_side_step(mode):
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
-        
         set_engine_state(int(p_s), int(a_s), int(p_m), int(a_m))
 
+# --- SOLVER SLOW SIDE STEP (Nuova Logica Geometrica) ---
 def apply_slow_side_step(direction):
+    # Logica: Orientare i vettori in modo che il loro prolungamento si intersechi
+    # esattamente in Y = Pivot Point Manuale.
+    # Questo crea un triangolo isoscele con vertice nel Pivot.
+    # Potenza fissa al 50%.
+    
+    Y_pp = st.session_state.pp_manual_y
+    Y_thruster = POS_THRUSTERS_Y # -12.0
+    X_thruster = POS_THRUSTERS_X # 2.7 (distanza dall'asse centrale)
+    
+    # Calcolo delta Y (Cateto adiacente)
+    # Se PP è a +5 e Thruster a -12, dy = 17
+    dy = Y_pp - Y_thruster 
+    
+    # Calcolo delta X (Cateto opposto)
+    dx = X_thruster
+    
+    # Calcolo angolo alpha (rispetto alla verticale)
+    # tan(alpha) = dx / dy
+    if abs(dy) < 0.1: dy = 0.1 # Evita divisione per zero
+    alpha_rad = np.arctan(dx / dy)
+    alpha_deg = np.degrees(alpha_rad)
+    
+    # Gestione caso Pivot dietro ai motori (molto raro ma possibile)
+    if dy < 0:
+        alpha_deg = 180 + alpha_deg
+
+    # Calcolo Azimuth in base alla direzione desiderata
     if direction == "DRITTA":
-        set_engine_state(50, 10, 50, 170)
-    else:
-        set_engine_state(50, 190, 50, 350)
+        # Per andare a dritta, SX spinge verso destra (angolo positivo)
+        # DX spinge verso destra/indietro (angolo simmetrico rispetto asse Y invertito)
+        # Esempio: Alpha 10°. SX=10°, DX=170° (180-10)
+        az_sx = alpha_deg
+        az_dx = 180 - alpha_deg
+    else: # SINISTRA
+        # Simmetrico speculare
+        # Esempio: Alpha 10°. SX=350° (360-10), DX=190° (180+10)
+        az_sx = 360 - alpha_deg
+        az_dx = 180 + alpha_deg
+        
+    # Normalizzazione 0-360
+    az_sx = az_sx % 360
+    az_dx = az_dx % 360
+    
+    set_engine_state(50, int(az_sx), 50, int(az_dx))
 
 def apply_turn_on_the_spot(direction):
     if direction == "DRITTA":
