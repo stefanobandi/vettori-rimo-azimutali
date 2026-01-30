@@ -21,21 +21,26 @@ DEFAULT_PP_Y = 5.3
 BOLLARD_PULL_PER_ENGINE = 35.0 
 MAX_THRUST = 343233.0   # 35 ton -> Newton
 
-# --- FISICA (Tuning Quadratica 12.7 kt) ---
-SHIP_MASS = 800000.0             
-MOMENT_OF_INERTIA = 100000000.0 
+# --- FISICA (Tuning ASD 32m) ---
+SHIP_MASS = 600000.0   # Dislocamento operativo (~600t)
+                       
+# MOMENTO D'INERZIA
+# Ridotto drasticamente per permettere rotazioni veloci (180° in 30s)
+MOMENT_OF_INERTIA = 12000000.0 
 
-# Calcolo Drag Quadratico: F = C * v^2
-# V_max = 12.7 kt = 6.53 m/s
-# F_tot = 686,466 N
-# C_surge = 686466 / (6.53^2) = ~16,100
+# DAMPING (Resistenze)
+
+# Surge: Resistenza all'avanzamento (V_max 12.7kt)
 QUADRATIC_DAMPING_SURGE = 16100.0
 
-# La resistenza laterale è molto più alta (5-8 volte) per via dello Skeg
-QUADRATIC_DAMPING_SWAY = 120000.0
+# Sway: Resistenza laterale (Skeg profondo)
+# Aumentato a 135k per limitare la velocità laterale a ~1.2kt con 5t di spinta
+QUADRATIC_DAMPING_SWAY = 135000.0
 
-# Resistenza Rotazionale (mista per stabilità)
-ANGULAR_DAMPING = 40000000.0      
+# Rotazione: Resistenza alla girata
+# Ridotto a 18M per permettere al rimorchiatore di prendere giri velocemente
+# Benchmark: 75% potenza + 15° azimuth -> rotazione 180° in 30s
+ANGULAR_DAMPING = 18000000.0      
 
 # Offset
 THRUSTER_X_OFFSET = POS_THRUSTERS_X
