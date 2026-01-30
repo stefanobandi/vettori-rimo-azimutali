@@ -37,6 +37,12 @@ if "physics" not in st.session_state:
 if "zoom_level" not in st.session_state:
     st.session_state.zoom_level = 80.0
 
+# Pivot Point Manuale Session State
+if "pp_manual_x" not in st.session_state:
+    st.session_state.pp_manual_x = DEFAULT_PP_X
+if "pp_manual_y" not in st.session_state:
+    st.session_state.pp_manual_y = DEFAULT_PP_Y
+
 def set_engine_state(p1, a1, p2, a2):
     st.session_state.p1, st.session_state.a1 = p1, a1
     st.session_state.p2, st.session_state.a2 = p2, a2
@@ -52,6 +58,9 @@ def full_reset_sim():
     st.session_state.history_x = []
     st.session_state.history_y = []
     st.session_state.zoom_level = 80.0
+    # Reset anche del Pivot ai default
+    st.session_state.pp_manual_x = DEFAULT_PP_X
+    st.session_state.pp_manual_y = DEFAULT_PP_Y
 
 def update_zoom(delta):
     new_zoom = st.session_state.zoom_level + delta
@@ -61,8 +70,12 @@ def update_zoom(delta):
 
 # --- SOLVER FAST SIDE STEP ---
 def solve_fast_side_step(mode):
-    Y_target = POS_SKEG_Y
-    dy = -17.0
+    Y_target = st.session_state.pp_manual_y # Usa il Pivot manuale come target
+    dy = -17.0 # Distanza approssimativa motori-pivot
+    # Se il pivot è molto diverso, ricalcoliamo dy
+    dy = Y_target - POS_THRUSTERS_Y 
+    if abs(dy) < 0.1: dy = 0.1 # Evita divisione per zero
+
     dx_sx = -POS_THRUSTERS_X
     dx_dx = POS_THRUSTERS_X
     
@@ -157,7 +170,6 @@ with st.sidebar:
     z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out", use_container_width=True)
     z3.metric("Raggio", f"{int(st.session_state.zoom_level)} m", label_visibility="collapsed")
     
-    # Checkbox Costruzione Vettoriale (Default False)
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     
     st.markdown("---")
@@ -181,6 +193,12 @@ with st.sidebar:
     ts1, ts2 = st.columns(2)
     ts1.button("🔄 Ruota SX", on_click=apply_turn_on_the_spot, args=("SINISTRA",), use_container_width=True)
     ts2.button("🔄 Ruota DX", on_click=apply_turn_on_the_spot, args=("DRITTA",), use_container_width=True)
+    
+    st.markdown("---")
+    st.markdown("### 📍 Pivot Point Manuale")
+    pp_c1, pp_c2 = st.columns(2)
+    st.session_state.pp_manual_x = pp_c1.number_input("Pos. X (m)", value=float(st.session_state.pp_manual_x), step=0.1, min_value=-10.0, max_value=10.0)
+    st.session_state.pp_manual_y = pp_c2.number_input("Pos. Y (m)", value=float(st.session_state.pp_manual_y), step=0.1, min_value=-20.0, max_value=20.0)
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 
@@ -213,7 +231,6 @@ if inter is not None:
 origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
 
 # --- UPDATE FISICA ---
-pp_y_auto = 0.0
 if show_prediction:
     current_time = time.time()
     dt = current_time - st.session_state.last_time
@@ -222,7 +239,10 @@ if show_prediction:
 
     thrust_l = (st.session_state.p1 / 100.0) * MAX_THRUST
     thrust_r = (st.session_state.p2 / 100.0) * MAX_THRUST
-    st.session_state.physics.update(dt, thrust_l, st.session_state.a1, thrust_r, st.session_state.a2)
+    
+    # PASSAGGIO PIVOT MANUALE AL MOTORE FISICO
+    st.session_state.physics.update(dt, thrust_l, st.session_state.a1, thrust_r, st.session_state.a2, 
+                                    st.session_state.pp_manual_x, st.session_state.pp_manual_y)
     
     state = st.session_state.physics.state
     st.session_state.history_x.append(state[0])
@@ -230,13 +250,11 @@ if show_prediction:
     if len(st.session_state.history_x) > 1000:
         st.session_state.history_x.pop(0)
         st.session_state.history_y.pop(0)
-    pp_y_auto = st.session_state.physics.current_pp_y
 else:
     st.session_state.physics.reset()
     st.session_state.last_time = time.time() 
-    thrust_l = (st.session_state.p1 / 100.0) * MAX_THRUST
-    thrust_r = (st.session_state.p2 / 100.0) * MAX_THRUST
-    pp_y_auto = st.session_state.physics.calculate_dynamic_pivot(thrust_l, st.session_state.a1, thrust_r, st.session_state.a2)
+    # Reset pivot physics state to manual
+    st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
 
 # --- LAYOUT GUI ---
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
@@ -254,8 +272,7 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    with st.expander("📍 Pivot Point (Auto Logic V7.6)", expanded=True):
-        st.metric("Posizione PP (Auto)", f"Y = {pp_y_auto:.2f} m")
+    # RIMOSSO EXPANDER AUTOMATICO
     
     if wash_dx_hits_sx:
         st.error("⚠️ ATTENZIONE: Flusso DX investe SX -> Perdita 20% spinta SX")
@@ -273,8 +290,8 @@ with col_c:
     # Nave e Scafo
     draw_static_elements(ax, pos_sx, pos_dx)
     
-    # Pivot Point Visual
-    ax.scatter(0, pp_y_auto, c='yellow', s=150, zorder=20, edgecolors='black', label="Pivot")
+    # Pivot Point Visual (MANUALE)
+    ax.scatter(st.session_state.pp_manual_x, st.session_state.pp_manual_y, c='yellow', s=150, zorder=20, edgecolors='black', label="Pivot")
     
     # VETTORI DI FORZA (Solid)
     sc = 0.7 
@@ -288,38 +305,18 @@ with col_c:
 
     # COSTRUZIONE VETTORIALE (MODIFICATA V7.8)
     if show_construction and inter is not None and res_ton > 0.1:
-        # 1. LINEE DI PROLUNGAMENTO (Linee d'azione dai motori all'intersezione)
-        # Linea SX (Rossa tratteggiata)
-        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], 
-                color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
-        # Linea DX (Verde tratteggiata)
-        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], 
-                color='green', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
+        ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
+        ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], color='green', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
 
-        # 2. VETTORI TRASLATI (IMMAGINARI) SULL'INTERSEZIONE
-        # Calcolo le punte dei vettori traslati partendo da 'inter'
         tip_sx_trans = inter + F_sx_eff * sc
         tip_dx_trans = inter + F_dx_eff * sc
 
-        # Disegno vettore SX traslato (Rosso) su Intersezione
-        ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, 
-                 color='red', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
-        
-        # Disegno vettore DX traslato (Verde) su Intersezione
-        ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, 
-                 color='green', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
+        ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, color='red', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
+        ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, color='green', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
 
-        # 3. CHIUSURA PARALLELOGRAMMA
-        # La risultante parte da inter e finisce in pRES_tip
         pRES_tip = inter + np.array([res_u_total, res_v_total]) * sc
-
-        # Lato parallelo al verde (chiude dalla punta del rosso traslato alla risultante)
-        ax.plot([tip_sx_trans[0], pRES_tip[0]], [tip_sx_trans[1], pRES_tip[1]], 
-                color='green', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
-
-        # Lato parallelo al rosso (chiude dalla punta del verde traslato alla risultante)
-        ax.plot([tip_dx_trans[0], pRES_tip[0]], [tip_dx_trans[1], pRES_tip[1]], 
-                color='red', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
+        ax.plot([tip_sx_trans[0], pRES_tip[0]], [tip_sx_trans[1], pRES_tip[1]], color='green', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
+        ax.plot([tip_dx_trans[0], pRES_tip[0]], [tip_dx_trans[1], pRES_tip[1]], color='red', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
     
     if show_prediction:
         state = st.session_state.physics.state
@@ -329,7 +326,6 @@ with col_c:
         rot_angle = -(ship_heading - np.pi/2)
         c, s = np.cos(rot_angle), np.sin(rot_angle)
             
-        # Trace Fix
         if len(st.session_state.history_x) > 1:
             hx = np.array(st.session_state.history_x)
             hy = np.array(st.session_state.history_y)
@@ -339,7 +335,6 @@ with col_c:
             ty = dx * s + dy * c
             ax.plot(tx, ty, color='#333333', linewidth=2, alpha=0.4, zorder=0)
 
-        # GRIGLIA NERA
         grid_spacing = 50.0 
         view_radius = st.session_state.zoom_level * 2.5 
         
@@ -359,7 +354,6 @@ with col_c:
         
         ax.scatter(gx_r, gy_r, c='black', s=20, alpha=0.5, zorder=0)
 
-        # Info Box
         math_deg = np.degrees(ship_heading)
         naut_hdg = (90 - math_deg) % 360
         speed_kn = np.sqrt(state[3]**2 + state[4]**2) * 1.94
@@ -375,7 +369,6 @@ with col_c:
                 color='black', fontsize=12, family='monospace', fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
         
-        # ZOOM 
         zoom = st.session_state.zoom_level
         ax.set_xlim(-zoom, zoom)
         ax.set_ylim(-zoom, zoom)
@@ -395,11 +388,21 @@ with col_c:
         time.sleep(0.05)
         st.rerun()
 
-# --- TABELLA ---
+# --- TABELLA TELEMETRIA (Con Pivot Manuale) ---
 st.write("---")
-st.subheader("📋 Telemetria di Manovra")
-M_tm_PP = ((pos_sx-[0, pp_y_auto])[0]*F_sx_eff[1] - (pos_sx-[0, pp_y_auto])[1]*F_sx_eff[0] + 
-           (pos_dx-[0, pp_y_auto])[0]*F_dx_eff[1] - (pos_dx-[0, pp_y_auto])[1]*F_dx_eff[0])
+st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
+
+# Coordinate Pivot Manuale
+PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
+
+# Calcolo Momento rispetto al PP Manuale
+# Momento = Forza * Braccio (Cross Product in 2D)
+arm_sx = pos_sx - PP_MAN
+arm_dx = pos_dx - PP_MAN
+
+M_sx = arm_sx[0]*F_sx_eff[1] - arm_sx[1]*F_sx_eff[0]
+M_dx = arm_dx[0]*F_dx_eff[1] - arm_dx[1]*F_dx_eff[0]
+M_tm_PP = M_sx + M_dx
 M_knm = M_tm_PP * G_ACCEL
 
 c1, c2, c3, c4 = st.columns(4)
