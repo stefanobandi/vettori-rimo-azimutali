@@ -78,16 +78,20 @@ def solve_fast_side_step(mode):
     dx_dx = POS_THRUSTERS_X
     
     if mode == "DRITTA":
+        # Master SX spinge (050°) -> Fy(Long)>0, Fx(Lat)>0
         p_m, a_m = 50.0, 50.0
         rad_m = np.radians(a_m)
-        Fy_m = p_m * np.cos(rad_m)
-        Fx_m = p_m * np.sin(rad_m)
+        Fy_m = p_m * np.cos(rad_m) # Longitudinal
+        Fx_m = p_m * np.sin(rad_m) # Lateral
+        
         M_m = (dx_sx * Fy_m) - (dy * Fx_m)
         
         Fy_s = -Fy_m 
         Fx_s = (M_m + dx_dx * Fy_s) / dy
         
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
+        rad_s = np.arctan2(Fx_s, Fy_s) # atan2(y, x) -> atan2(Lat, Long) ? No. 
+        # atan2(x, y) è azimuth standard (x=sin, y=cos)
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
         set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
@@ -109,10 +113,10 @@ def apply_slow_side_step(direction):
     Y_pp = st.session_state.pp_manual_y
     dy = Y_pp - POS_THRUSTERS_Y 
     dx = POS_THRUSTERS_X 
-    
     if abs(dy) < 0.1: dy = 0.1
-    alpha_deg = np.degrees(np.arctan(dx / dy))
     
+    # Angolo rispetto alla prua (0)
+    alpha_deg = np.degrees(np.arctan(dx / dy))
     if dy < 0: alpha_deg = 180 + alpha_deg
 
     if direction == "DRITTA":
@@ -124,13 +128,11 @@ def apply_slow_side_step(direction):
         
     set_engine_state(50, int(az_sx % 360), 50, int(az_dx % 360))
 
-# --- TURNING ON THE SPOT (CLASSIC V7.6) ---
+# --- TURNING ON THE SPOT ---
 def apply_turn_on_the_spot(direction):
     if direction == "DRITTA":
-        # Motori in opposizione per girata oraria
         set_engine_state(50, 330, 50, 210)
     else:
-        # Motori in opposizione per girata antioraria
         set_engine_state(50, 150, 50, 30)
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
@@ -210,12 +212,12 @@ with st.sidebar:
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 
-# --- CALCOLI VETTORIALI ---
+# --- CALCOLI VETTORIALI UI (VISUAL) ---
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
-# Vettori forza (Nautical: sin=X, cos=Y)
+# Vettori forza Visual (0=N, 90=E)
 F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
@@ -238,34 +240,7 @@ if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
 origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
 
-# --- TABELLA TELEMETRIA (Spostata PRIMA della predizione per evitare freeze) ---
-st.write("---")
-st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
-
-PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
-arm_sx = pos_sx - PP_MAN
-arm_dx = pos_dx - PP_MAN
-
-# Cross Product 2D: x*Fy - y*Fx
-M_sx = arm_sx[0]*F_sx_eff[1] - arm_sx[1]*F_sx_eff[0]
-M_dx = arm_dx[0]*F_dx_eff[1] - arm_dx[1]*F_dx_eff[0]
-M_tm_PP = M_sx + M_dx
-M_knm = M_tm_PP * G_ACCEL
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Spinta Risultante", f"{res_ton:.1f} t")
-c2.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
-c3.metric("Momento (PP)", f"{int(M_tm_PP)} t*m")
-c4.metric("Momento (kNm)", f"{int(M_knm)} kNm")
-
-df_engines = pd.DataFrame({
-    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
-    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
-    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
-})
-st.table(df_engines)
-
-# --- VISUALIZZAZIONE & UPDATE FISICA ---
+# --- VISUALIZZAZIONE GUI ---
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 
 with col_l:
@@ -386,7 +361,6 @@ with col_c:
         ax.set_xlim(-zoom, zoom)
         ax.set_ylim(-zoom, zoom)
         
-        # LOOP PREDIZIONE (RERUN)
         ax.set_aspect('equal')
         ax.axis('off')
         st.pyplot(fig)
@@ -394,7 +368,6 @@ with col_c:
         st.rerun()
 
     else:
-        # VISUALIZZAZIONE STATICA
         st.session_state.physics.reset()
         st.session_state.last_time = time.time() 
         st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
@@ -407,3 +380,9 @@ with col_c:
         ax.set_aspect('equal')
         ax.axis('off')
         st.pyplot(fig)
+
+# --- TABELLA IN FONDO (PLACEHOLDER) ---
+st.write("---")
+table_placeholder = st.empty()
+table_placeholder.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
+table_placeholder.table(df_engines)
