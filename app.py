@@ -109,46 +109,43 @@ def solve_fast_side_step(mode):
         a_s = np.degrees(rad_s) % 360
         set_engine_state(int(p_s), int(a_s), int(p_m), int(a_m))
 
-# --- SOLVER SLOW SIDE STEP (Nuova Logica Geometrica) ---
+# --- SOLVER SLOW SIDE STEP (Corretto & Simmetrico) ---
 def apply_slow_side_step(direction):
-    # Logica: Orientare i vettori in modo che il loro prolungamento si intersechi
-    # esattamente in Y = Pivot Point Manuale.
-    # Questo crea un triangolo isoscele con vertice nel Pivot.
-    # Potenza fissa al 50%.
+    # Logica Geometrica: Triangolo Isoscele con vertice nel Pivot Point.
+    # Potenza fissa 50% (circa 5.2t risultante).
     
     Y_pp = st.session_state.pp_manual_y
-    Y_thruster = POS_THRUSTERS_Y # -12.0
-    X_thruster = POS_THRUSTERS_X # 2.7 (distanza dall'asse centrale)
+    Y_thruster = POS_THRUSTERS_Y 
+    X_thruster = POS_THRUSTERS_X 
     
-    # Calcolo delta Y (Cateto adiacente)
-    # Se PP è a +5 e Thruster a -12, dy = 17
+    # Delta Y e Delta X
     dy = Y_pp - Y_thruster 
-    
-    # Calcolo delta X (Cateto opposto)
     dx = X_thruster
     
-    # Calcolo angolo alpha (rispetto alla verticale)
-    # tan(alpha) = dx / dy
-    if abs(dy) < 0.1: dy = 0.1 # Evita divisione per zero
+    if abs(dy) < 0.1: dy = 0.1
     alpha_rad = np.arctan(dx / dy)
     alpha_deg = np.degrees(alpha_rad)
     
-    # Gestione caso Pivot dietro ai motori (molto raro ma possibile)
+    # Se il pivot è dietro ai motori (caso raro), correggiamo l'angolo
     if dy < 0:
         alpha_deg = 180 + alpha_deg
 
-    # Calcolo Azimuth in base alla direzione desiderata
+    # CONFIGURAZIONE PUSH-PULL SIMMETRICA
+    # I vettori sono orientati per convergere sul Pivot Point
+    
     if direction == "DRITTA":
-        # Per andare a dritta, SX spinge verso destra (angolo positivo)
-        # DX spinge verso destra/indietro (angolo simmetrico rispetto asse Y invertito)
-        # Esempio: Alpha 10°. SX=10°, DX=170° (180-10)
+        # DRITTA:
+        # SX (Sinistro) SPINGE avanti/destra (es. 010°)
+        # DX (Destro) TIRA indietro/destra (es. 170°)
         az_sx = alpha_deg
         az_dx = 180 - alpha_deg
+        
     else: # SINISTRA
-        # Simmetrico speculare
-        # Esempio: Alpha 10°. SX=350° (360-10), DX=190° (180+10)
-        az_sx = 360 - alpha_deg
-        az_dx = 180 + alpha_deg
+        # SINISTRA (Speculare):
+        # DX (Destro) SPINGE avanti/sinistra (es. 350°)
+        # SX (Sinistro) TIRA indietro/sinistra (es. 190°)
+        az_dx = 360 - alpha_deg
+        az_sx = 180 + alpha_deg
         
     # Normalizzazione 0-360
     az_sx = az_sx % 360
@@ -158,9 +155,9 @@ def apply_slow_side_step(direction):
 
 def apply_turn_on_the_spot(direction):
     if direction == "DRITTA":
-        set_engine_state(50, 330, 50, 210)
+        set_engine_state(75, 15, 75, 15) # Configurazione Standard 180°/30s
     else:
-        set_engine_state(50, 150, 50, 30)
+        set_engine_state(75, 345, 75, 345)
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
