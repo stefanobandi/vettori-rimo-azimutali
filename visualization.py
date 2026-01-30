@@ -26,7 +26,7 @@ def draw_wash(ax, pos, angle_deg, power_pct):
     
     verts = [p1, p2, p3, p4]
     
-    # MODIFICA: Colore Azzurro (#00FFFF) semi-trasparente (alpha=0.3)
+    # MODIFICA: Colore Ciano (#00FFFF) semi-trasparente (alpha=0.3)
     ax.add_patch(plt.Polygon(verts, facecolor='#00FFFF', alpha=0.3, edgecolor='none', zorder=1.0))
 
 def draw_propeller(ax, pos, angle_deg, color='black', scale=1.0, is_polar=False):
@@ -65,7 +65,7 @@ def get_hull_path():
     hw, stern, bow_tip, shoulder = 5.85, -16.25, 16.25, 8.0
     return [
         (Path.MOVETO, (-hw, stern)), (Path.LINETO, (hw, stern)), (Path.LINETO, (hw, shoulder)),
-        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),    
+        (Path.CURVE4, (hw, 14.0)), (Path.CURVE4, (4.0, bow_tip)), (Path.CURVE4, (0, bow_tip)),     
         (Path.CURVE4, (-4.0, bow_tip)), (Path.CURVE4, (-hw, 14.0)), (Path.CURVE4, (-hw, shoulder)), 
         (Path.LINETO, (-hw, stern)), (Path.CLOSEPOLY, (-hw, stern))
     ]
@@ -74,7 +74,7 @@ def draw_static_elements(ax, pos_sx, pos_dx):
     path_data = get_hull_path()
     codes, verts = zip(*path_data)
     
-    # MODIFICA: facecolor='none' per rendere lo scafo trasparente
+    # MODIFICA: facecolor='none' per rendere lo scafo trasparente, solo contorno nero
     ax.add_patch(PathPatch(Path(verts, codes), facecolor='none', edgecolor='black', lw=2, zorder=5))
     
     hw, bow_tip, shoulder = 5.85, 16.25, 8.0
