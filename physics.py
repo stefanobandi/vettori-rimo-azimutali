@@ -10,50 +10,41 @@ class PhysicsEngine:
         # Stato: [x, y, psi, u, v, r]
         self.state = np.zeros(6)
         self.state[2] = math.pi / 2 
-        self.current_pp_y = 0.0 
-        self.pivot_mode = "INIT" 
+        self.current_pp_y = DEFAULT_PP_Y 
+        self.pivot_mode = "MANUAL" 
 
     def normalize_angle(self, angle):
         return angle % (2 * math.pi)
 
     def calculate_dynamic_pivot(self, left_thrust, left_angle_deg, right_thrust, right_angle_deg):
+        # Manteniamo la funzione per eventuale uso futuro o debug, 
+        # ma non viene più chiamata nel loop principale se usiamo il manuale.
         u = self.state[3]
         u_kn = u * 1.94384 
         
-        # CASO 1: NAVIGAZIONE (V > 1 kn)
         if u_kn > 1.0:
-            self.pivot_mode = "SKEG (AVANTI)"
             return POS_SKEG_Y 
         elif u_kn < -1.0:
-            self.pivot_mode = "SKEG (INDIETRO)"
             return 3.0 
-            
-        # CASO 2: MANOVRA (V < 1 kn)
         else:
-            self.pivot_mode = "FORCE LOGIC"
             rad_l = math.radians(left_angle_deg)
             rad_r = math.radians(right_angle_deg)
-            
             fx_l = left_thrust * math.cos(rad_l)
             fy_l = left_thrust * math.sin(rad_l)
             fx_r = right_thrust * math.cos(rad_r)
             fy_r = right_thrust * math.sin(rad_r)
-            
             sway_force_net = abs(fy_l + fy_r)
             twist_force_net = abs(fx_l - fx_r)
-            
             total_force = sway_force_net + twist_force_net
             if total_force < 1000.0: return 2.0 
-            
             ratio = sway_force_net / (total_force + 0.1)
             calculated_y = POS_STERN_Y + (POS_SKEG_Y - POS_STERN_Y) * ratio
             return calculated_y
 
-    def update(self, dt, left_thrust, left_angle, right_thrust, right_angle):
-        pp_y = self.calculate_dynamic_pivot(left_thrust, left_angle, right_thrust, right_angle)
+    def update(self, dt, left_thrust, left_angle, right_thrust, right_angle, pp_x, pp_y):
+        # Aggiorniamo lo stato interno del pivot (per riferimento)
         self.current_pp_y = pp_y 
-        pp_x = 0.0 
-
+        
         u = self.state[3]
         v = self.state[4]
         r = self.state[5]
@@ -70,25 +61,29 @@ class PhysicsEngine:
         X_thrust = fx_l + fx_r
         Y_thrust = fy_l + fy_r
         
-        # Momento Motori
+        # Momento Motori (sempre rispetto al baricentro geometrico 0,0 per il calcolo rotazionale fisico di base)
+        # Nota: La simulazione fisica di base calcola la rotazione attorno al CG.
+        # Il Pivot Point influenza il punto di applicazione della resistenza laterale (Skeg effect).
         moment_l = (-POS_THRUSTERS_X * fx_l) - (POS_THRUSTERS_Y * fy_l)
         moment_r = (POS_THRUSTERS_X * fx_r) - (POS_THRUSTERS_Y * fy_r)
         N_thrust = moment_l + moment_r
 
-        # --- DAMPING QUADRATICO (V7.6) ---
-        # Resistenza = -C * v * |v|
+        # --- DAMPING QUADRATICO ---
+        # Resistenza calcolata in base alla velocità nel punto di Pivot (Skeg/Manuale)
         
+        # Velocità locali al Pivot Point manuale
         u_at_pivot = u - (r * pp_y)
         v_at_pivot = v + (r * pp_x)
         
         X_damping = -(QUADRATIC_DAMPING_SURGE * u_at_pivot * abs(u_at_pivot))
         Y_damping = -(QUADRATIC_DAMPING_SWAY * v_at_pivot * abs(v_at_pivot))
         
-        # Rotazione: Manteniamo lineare o mista per evitare instabilità a bassa velocità
+        # Rotazione
         N_damping_rot = -(ANGULAR_DAMPING * r)
         
-        # Momento Indotto (Leva della resistenza laterale)
-        N_damping_induced = -(pp_y * Y_damping)
+        # Momento Indotto dalla resistenza laterale (Leva = Distanza PP dal CG)
+        # Se il PP è a prua (Y positivo), una resistenza laterale crea momento.
+        N_damping_induced = -(pp_y * Y_damping) + (pp_x * X_damping)
         
         X_total = X_thrust + X_damping
         Y_total = Y_thrust + Y_damping
