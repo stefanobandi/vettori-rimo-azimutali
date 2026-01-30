@@ -78,20 +78,16 @@ def solve_fast_side_step(mode):
     dx_dx = POS_THRUSTERS_X
     
     if mode == "DRITTA":
-        # Master SX spinge (050°) -> Fy(Long)>0, Fx(Lat)>0
         p_m, a_m = 50.0, 50.0
         rad_m = np.radians(a_m)
-        Fy_m = p_m * np.cos(rad_m) # Longitudinal
-        Fx_m = p_m * np.sin(rad_m) # Lateral
-        
+        Fy_m = p_m * np.cos(rad_m)
+        Fx_m = p_m * np.sin(rad_m)
         M_m = (dx_sx * Fy_m) - (dy * Fx_m)
         
         Fy_s = -Fy_m 
         Fx_s = (M_m + dx_dx * Fy_s) / dy
         
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
-        rad_s = np.arctan2(Fx_s, Fy_s) # atan2(y, x) -> atan2(Lat, Long) ? No. 
-        # atan2(x, y) è azimuth standard (x=sin, y=cos)
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
         set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
@@ -113,10 +109,12 @@ def apply_slow_side_step(direction):
     Y_pp = st.session_state.pp_manual_y
     dy = Y_pp - POS_THRUSTERS_Y 
     dx = POS_THRUSTERS_X 
+    
     if abs(dy) < 0.1: dy = 0.1
     
-    # Angolo rispetto alla prua (0)
+    # Angolo rispetto alla prua
     alpha_deg = np.degrees(np.arctan(dx / dy))
+    
     if dy < 0: alpha_deg = 180 + alpha_deg
 
     if direction == "DRITTA":
@@ -212,12 +210,11 @@ with st.sidebar:
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 
-# --- CALCOLI VETTORIALI UI (VISUAL) ---
+# --- CALCOLI VETTORIALI UI ---
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
-# Vettori forza Visual (0=N, 90=E)
 F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
@@ -290,6 +287,7 @@ with col_c:
         ax.plot([tip_sx_trans[0], pRES_tip[0]], [tip_sx_trans[1], pRES_tip[1]], color='green', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
         ax.plot([tip_dx_trans[0], pRES_tip[0]], [tip_dx_trans[1], pRES_tip[1]], color='red', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
     
+    # 1. Update fisica se Predizione Attiva
     if show_prediction:
         current_time = time.time()
         dt = current_time - st.session_state.last_time
@@ -360,14 +358,9 @@ with col_c:
         zoom = st.session_state.zoom_level
         ax.set_xlim(-zoom, zoom)
         ax.set_ylim(-zoom, zoom)
-        
-        ax.set_aspect('equal')
-        ax.axis('off')
-        st.pyplot(fig)
-        time.sleep(0.05)
-        st.rerun()
 
     else:
+        # Reset stato fisico se non in predizione
         st.session_state.physics.reset()
         st.session_state.last_time = time.time() 
         st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
@@ -377,12 +370,36 @@ with col_c:
         
         ax.set_xlim(-30, 30)
         ax.set_ylim(-40, 40)
-        ax.set_aspect('equal')
-        ax.axis('off')
-        st.pyplot(fig)
 
-# --- TABELLA IN FONDO (PLACEHOLDER) ---
+    ax.set_aspect('equal')
+    ax.axis('off')
+    st.pyplot(fig)
+
+# --- TABELLA (Renderizzata sempre alla fine) ---
 st.write("---")
-table_placeholder = st.empty()
-table_placeholder.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
-table_placeholder.table(df_engines)
+st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
+PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
+arm_sx = pos_sx - PP_MAN
+arm_dx = pos_dx - PP_MAN
+M_sx = arm_sx[0]*F_sx_eff[1] - arm_sx[1]*F_sx_eff[0]
+M_dx = arm_dx[0]*F_dx_eff[1] - arm_dx[1]*F_dx_eff[0]
+M_tm_PP = M_sx + M_dx
+M_knm = M_tm_PP * G_ACCEL
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Spinta Risultante", f"{res_ton:.1f} t")
+c2.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
+c3.metric("Momento (PP)", f"{int(M_tm_PP)} t*m")
+c4.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+
+df_engines = pd.DataFrame({
+    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
+    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
+    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
+})
+st.table(df_engines)
+
+# --- RERUN LOOP (Solo alla fine) ---
+if show_prediction:
+    time.sleep(0.05)
+    st.rerun()
