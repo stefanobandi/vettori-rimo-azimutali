@@ -17,7 +17,6 @@ st.markdown("""
         overflow-wrap: break-word;
         white-space: normal;
     }
-    /* Stile per i bottoni zoom compatti */
     div[data-testid="column"] button {
         height: auto;
         padding-top: 5px;
@@ -37,7 +36,6 @@ if "physics" not in st.session_state:
 if "zoom_level" not in st.session_state:
     st.session_state.zoom_level = 80.0
 
-# Pivot Point Manuale Session State
 if "pp_manual_x" not in st.session_state:
     st.session_state.pp_manual_x = DEFAULT_PP_X
 if "pp_manual_y" not in st.session_state:
@@ -70,7 +68,7 @@ def update_zoom(delta):
     if new_zoom > 300: new_zoom = 300
     st.session_state.zoom_level = new_zoom
 
-# --- SOLVER FAST SIDE STEP (Logica V7.6 Ripristinata) ---
+# --- SOLVER FAST SIDE STEP ---
 def solve_fast_side_step(mode):
     Y_target = st.session_state.pp_manual_y
     dy = POS_THRUSTERS_Y - Y_target
@@ -93,71 +91,47 @@ def solve_fast_side_step(mode):
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
         set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
-        
-    else: # SINISTRA
+    else: 
         p_m, a_m = 50.0, 310.0
         rad_m = np.radians(a_m)
         Fy_m = p_m * np.cos(rad_m)
         Fx_m = p_m * np.sin(rad_m)
         M_m = (dx_dx * Fy_m) - (dy * Fx_m)
-        
         Fy_s = -Fy_m
         Fx_s = (M_m + dx_sx * Fy_s) / dy
-        
         p_s = np.sqrt(Fx_s**2 + Fy_s**2)
         rad_s = np.arctan2(Fx_s, Fy_s)
         a_s = np.degrees(rad_s) % 360
         set_engine_state(int(p_s), int(a_s), int(p_m), int(a_m))
 
-# --- SOLVER SLOW SIDE STEP (Corretto & Simmetrico) ---
+# --- SOLVER SLOW SIDE STEP ---
 def apply_slow_side_step(direction):
-    # Logica Geometrica: Triangolo Isoscele con vertice nel Pivot Point.
-    # Potenza fissa 50% (circa 5.2t risultante).
-    
     Y_pp = st.session_state.pp_manual_y
-    Y_thruster = POS_THRUSTERS_Y 
-    X_thruster = POS_THRUSTERS_X 
-    
-    # Delta Y e Delta X
-    dy = Y_pp - Y_thruster 
-    dx = X_thruster
+    dy = Y_pp - POS_THRUSTERS_Y 
+    dx = POS_THRUSTERS_X 
     
     if abs(dy) < 0.1: dy = 0.1
-    alpha_rad = np.arctan(dx / dy)
-    alpha_deg = np.degrees(alpha_rad)
+    alpha_deg = np.degrees(np.arctan(dx / dy))
     
-    # Se il pivot è dietro ai motori (caso raro), correggiamo l'angolo
-    if dy < 0:
-        alpha_deg = 180 + alpha_deg
+    if dy < 0: alpha_deg = 180 + alpha_deg
 
-    # CONFIGURAZIONE PUSH-PULL SIMMETRICA
-    # I vettori sono orientati per convergere sul Pivot Point
-    
     if direction == "DRITTA":
-        # DRITTA:
-        # SX (Sinistro) SPINGE avanti/destra (es. 010°)
-        # DX (Destro) TIRA indietro/destra (es. 170°)
         az_sx = alpha_deg
         az_dx = 180 - alpha_deg
-        
-    else: # SINISTRA
-        # SINISTRA (Speculare):
-        # DX (Destro) SPINGE avanti/sinistra (es. 350°)
-        # SX (Sinistro) TIRA indietro/sinistra (es. 190°)
+    else: 
         az_dx = 360 - alpha_deg
         az_sx = 180 + alpha_deg
         
-    # Normalizzazione 0-360
-    az_sx = az_sx % 360
-    az_dx = az_dx % 360
-    
-    set_engine_state(50, int(az_sx), 50, int(az_dx))
+    set_engine_state(50, int(az_sx % 360), 50, int(az_dx % 360))
 
+# --- TURNING ON THE SPOT (CLASSIC V7.6) ---
 def apply_turn_on_the_spot(direction):
     if direction == "DRITTA":
-        set_engine_state(75, 15, 75, 15) # Configurazione Standard 180°/30s
+        # Motori in opposizione per girata oraria
+        set_engine_state(50, 330, 50, 210)
     else:
-        set_engine_state(75, 345, 75, 345)
+        # Motori in opposizione per girata antioraria
+        set_engine_state(50, 150, 50, 30)
 
 def check_wash_hit(origin, wash_vec, target_pos, threshold=2.0):
     wash_len = np.linalg.norm(wash_vec)
@@ -180,24 +154,18 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
         return p1 + t * v1
     except: return None
 
-# --- HEADER ---
+# --- UI HEADER ---
 st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.8 ⚓</h1>", unsafe_allow_html=True)
-st.markdown("""
-<div style='text-align: center;'>
-    <i>per info contattare stefano.bandi22@gmail.com</i>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center;'><i>per info contattare stefano.bandi22@gmail.com</i></div>", unsafe_allow_html=True)
 st.write("---")
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Comandi Globali")
-    
     c1, c2 = st.columns(2)
     c1.button("Reset Motori", on_click=reset_engines, type="primary", use_container_width=True)
     c2.button("Reset Sim", on_click=full_reset_sim, use_container_width=True)
-    
     st.markdown("---")
-    
     st.markdown("### 👁️ Visualizzazione")
     show_wash = st.checkbox("Mostra Propeller Wash", value=True)
     show_prediction = st.checkbox("Predizione Movimento (BETA)", value=False)
@@ -207,7 +175,6 @@ with st.sidebar:
     z1.button("➕", on_click=update_zoom, args=(-10,), help="Zoom In", use_container_width=True)
     z2.button("➖", on_click=update_zoom, args=(10,), help="Zoom Out", use_container_width=True)
     z3.metric("Raggio", f"{int(st.session_state.zoom_level)} m", label_visibility="collapsed")
-    
     show_construction = st.checkbox("Costruzione Vettoriale", value=False)
     
     st.markdown("---")
@@ -218,6 +185,7 @@ with st.sidebar:
     ca1, ca2 = st.columns(2)
     ca1.button("⬇️ Tutta INDIETRO", on_click=set_engine_state, args=(100,180,100,180), use_container_width=True)
     ca2.button("🔽 Mezza INDIETRO", on_click=set_engine_state, args=(50,180,50,180), use_container_width=True)
+    
     st.markdown("---")
     st.markdown("### ↔️ Side Step")
     r1, r2 = st.columns(2)
@@ -226,6 +194,7 @@ with st.sidebar:
     r3, r4 = st.columns(2)
     r3.button("⬅️ Slow SX", on_click=apply_slow_side_step, args=("SINISTRA",), use_container_width=True)
     r4.button("➡️ Slow DX", on_click=apply_slow_side_step, args=("DRITTA",), use_container_width=True)
+    
     st.markdown("---")
     st.markdown("### 🔄 Turning on the Spot")
     ts1, ts2 = st.columns(2)
@@ -235,18 +204,18 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📍 Pivot Point Manuale")
     pp_c1, pp_c2 = st.columns(2)
-    # Limiti per restare nella sagoma scafo
     st.session_state.pp_manual_x = pp_c1.number_input("Pos. X (m)", value=float(st.session_state.pp_manual_x), step=0.1, min_value=-5.8, max_value=5.8)
     st.session_state.pp_manual_y = pp_c2.number_input("Pos. Y (m)", value=float(st.session_state.pp_manual_y), step=0.1, min_value=-16.0, max_value=16.0)
     st.button("Reset PP Default", on_click=reset_pivot_point, use_container_width=True)
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 
-# CALCOLI VETTORIALI
+# --- CALCOLI VETTORIALI ---
 ton1_set = (st.session_state.p1/100)*BOLLARD_PULL_PER_ENGINE
 ton2_set = (st.session_state.p2/100)*BOLLARD_PULL_PER_ENGINE
 rad1, rad2 = np.radians(st.session_state.a1), np.radians(st.session_state.a2)
 
+# Vettori forza (Nautical: sin=X, cos=Y)
 F_sx_eff_v = np.array([ton1_set*np.sin(rad1), ton1_set*np.cos(rad1)])
 F_dx_eff_v = np.array([ton2_set*np.sin(rad2), ton2_set*np.cos(rad2)])
 
@@ -267,34 +236,36 @@ inter = intersect_lines(pos_sx, st.session_state.a1, pos_dx, st.session_state.a2
 use_weighted = True
 if inter is not None:
     if np.linalg.norm(inter) <= 50.0: use_weighted = False
-    
 origin_res = inter if not use_weighted else np.array([(ton1_eff * pos_sx[0] + ton2_eff * pos_dx[0]) / (ton1_eff + ton2_eff + 0.001), POS_THRUSTERS_Y])
 
-# --- UPDATE FISICA ---
-if show_prediction:
-    current_time = time.time()
-    dt = current_time - st.session_state.last_time
-    st.session_state.last_time = current_time
-    if dt > 0.1: dt = 0.1
+# --- TABELLA TELEMETRIA (Spostata PRIMA della predizione per evitare freeze) ---
+st.write("---")
+st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
 
-    thrust_l = (st.session_state.p1 / 100.0) * MAX_THRUST
-    thrust_r = (st.session_state.p2 / 100.0) * MAX_THRUST
-    
-    st.session_state.physics.update(dt, thrust_l, st.session_state.a1, thrust_r, st.session_state.a2, 
-                                    st.session_state.pp_manual_x, st.session_state.pp_manual_y)
-    
-    state = st.session_state.physics.state
-    st.session_state.history_x.append(state[0])
-    st.session_state.history_y.append(state[1])
-    if len(st.session_state.history_x) > 1000:
-        st.session_state.history_x.pop(0)
-        st.session_state.history_y.pop(0)
-else:
-    st.session_state.physics.reset()
-    st.session_state.last_time = time.time() 
-    st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
+PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
+arm_sx = pos_sx - PP_MAN
+arm_dx = pos_dx - PP_MAN
 
-# --- LAYOUT GUI ---
+# Cross Product 2D: x*Fy - y*Fx
+M_sx = arm_sx[0]*F_sx_eff[1] - arm_sx[1]*F_sx_eff[0]
+M_dx = arm_dx[0]*F_dx_eff[1] - arm_dx[1]*F_dx_eff[0]
+M_tm_PP = M_sx + M_dx
+M_knm = M_tm_PP * G_ACCEL
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Spinta Risultante", f"{res_ton:.1f} t")
+c2.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
+c3.metric("Momento (PP)", f"{int(M_tm_PP)} t*m")
+c4.metric("Momento (kNm)", f"{int(M_knm)} kNm")
+
+df_engines = pd.DataFrame({
+    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
+    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
+    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
+})
+st.table(df_engines)
+
+# --- VISUALIZZAZIONE & UPDATE FISICA ---
 col_l, col_c, col_r = st.columns([1.2, 2.6, 1.2])
 
 with col_l:
@@ -318,44 +289,51 @@ with col_c:
     fig, ax = plt.subplots(figsize=(10, 12))
     ax.set_facecolor(COLOR_SEA) 
     
-    # Wash 
     if show_wash:
         draw_wash(ax, pos_sx, st.session_state.a1, st.session_state.p1)
         draw_wash(ax, pos_dx, st.session_state.a2, st.session_state.p2)
     
-    # Nave e Scafo
     draw_static_elements(ax, pos_sx, pos_dx)
-    
-    # Pivot Point Visual (MANUALE)
     ax.scatter(st.session_state.pp_manual_x, st.session_state.pp_manual_y, c='yellow', s=150, zorder=20, edgecolors='black', label="Pivot")
     
-    # VETTORI DI FORZA (Solid)
     sc = 0.7 
     ax.arrow(pos_sx[0], pos_sx[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, fc='red', ec='red', width=0.15, head_width=min(0.5, np.linalg.norm(F_sx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_sx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     ax.arrow(pos_dx[0], pos_dx[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, fc='green', ec='green', width=0.15, head_width=min(0.5, np.linalg.norm(F_dx_eff)*sc*0.4), head_length=min(0.7, np.linalg.norm(F_dx_eff)*sc*0.5), zorder=25, alpha=0.9, length_includes_head=True)
     
-    # Vettore Risultante (BLU)
     if res_ton > 0.1:
         v_res_len = res_ton * sc
         ax.arrow(origin_res[0], origin_res[1], res_u_total*sc, res_v_total*sc, fc='blue', ec='blue', width=0.3, head_width=min(0.8, v_res_len*0.4), head_length=min(1.2, v_res_len*0.5), alpha=0.7, zorder=26, length_includes_head=True)
 
-    # COSTRUZIONE VETTORIALE (MODIFICATA V7.8)
     if show_construction and inter is not None and res_ton > 0.1:
         ax.plot([pos_sx[0], inter[0]], [pos_sx[1], inter[1]], color='red', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
         ax.plot([pos_dx[0], inter[0]], [pos_dx[1], inter[1]], color='green', linestyle='--', linewidth=1.5, alpha=0.5, zorder=23)
-
         tip_sx_trans = inter + F_sx_eff * sc
         tip_dx_trans = inter + F_dx_eff * sc
-
         ax.arrow(inter[0], inter[1], F_sx_eff[0]*sc, F_sx_eff[1]*sc, color='red', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
         ax.arrow(inter[0], inter[1], F_dx_eff[0]*sc, F_dx_eff[1]*sc, color='green', ls='--', lw=1.5, alpha=0.6, head_width=0, zorder=24)
-
         pRES_tip = inter + np.array([res_u_total, res_v_total]) * sc
         ax.plot([tip_sx_trans[0], pRES_tip[0]], [tip_sx_trans[1], pRES_tip[1]], color='green', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
         ax.plot([tip_dx_trans[0], pRES_tip[0]], [tip_dx_trans[1], pRES_tip[1]], color='red', linestyle='--', linewidth=2.0, alpha=0.8, zorder=24)
     
     if show_prediction:
+        current_time = time.time()
+        dt = current_time - st.session_state.last_time
+        st.session_state.last_time = current_time
+        if dt > 0.1: dt = 0.1
+
+        thrust_l = (st.session_state.p1 / 100.0) * MAX_THRUST
+        thrust_r = (st.session_state.p2 / 100.0) * MAX_THRUST
+        
+        st.session_state.physics.update(dt, thrust_l, st.session_state.a1, thrust_r, st.session_state.a2, 
+                                        st.session_state.pp_manual_x, st.session_state.pp_manual_y)
+        
         state = st.session_state.physics.state
+        st.session_state.history_x.append(state[0])
+        st.session_state.history_y.append(state[1])
+        if len(st.session_state.history_x) > 1000:
+            st.session_state.history_x.pop(0)
+            st.session_state.history_y.pop(0)
+
         ship_x, ship_y = state[0], state[1]
         ship_heading = state[2]
         
@@ -400,7 +378,6 @@ with col_c:
             f"V  : {speed_kn:5.1f} kn\n"
             f"RoT: {rot_deg_min:5.1f} °/m"
         )
-        
         ax.text(-st.session_state.zoom_level*0.9, st.session_state.zoom_level*0.75, info_text, 
                 color='black', fontsize=12, family='monospace', fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
@@ -409,44 +386,24 @@ with col_c:
         ax.set_xlim(-zoom, zoom)
         ax.set_ylim(-zoom, zoom)
         
+        # LOOP PREDIZIONE (RERUN)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        st.pyplot(fig)
+        time.sleep(0.05)
+        st.rerun()
+
     else:
+        # VISUALIZZAZIONE STATICA
+        st.session_state.physics.reset()
+        st.session_state.last_time = time.time() 
+        st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
+        
         draw_propeller(ax, pos_sx, st.session_state.a1, color='red')
         draw_propeller(ax, pos_dx, st.session_state.a2, color='green')
         
         ax.set_xlim(-30, 30)
         ax.set_ylim(-40, 40)
-
-    ax.set_aspect('equal')
-    ax.axis('off')
-    st.pyplot(fig)
-    
-    if show_prediction:
-        time.sleep(0.05)
-        st.rerun()
-
-# --- TABELLA TELEMETRIA (Con Pivot Manuale) ---
-st.write("---")
-st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
-
-PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
-
-arm_sx = pos_sx - PP_MAN
-arm_dx = pos_dx - PP_MAN
-
-M_sx = arm_sx[0]*F_sx_eff[1] - arm_sx[1]*F_sx_eff[0]
-M_dx = arm_dx[0]*F_dx_eff[1] - arm_dx[1]*F_dx_eff[0]
-M_tm_PP = M_sx + M_dx
-M_knm = M_tm_PP * G_ACCEL
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Spinta Risultante", f"{res_ton:.1f} t")
-c2.metric("Direzione Spinta", f"{int(direzione_nautica)}°")
-c3.metric("Momento (PP)", f"{int(M_tm_PP)} t*m")
-c4.metric("Momento (kNm)", f"{int(M_knm)} kNm")
-
-df_engines = pd.DataFrame({
-    "Parametro": ["Potenza (%)", "Azimuth (°)", "Spinta Teorica (t)", "Wash Penalty", "Spinta Effettiva (t)"],
-    "Propulsore SX": [st.session_state.p1, st.session_state.a1, f"{(ton1_set):.1f}", "SÌ (-20%)" if wash_dx_hits_sx else "NO", f"{ton1_eff:.1f}"],
-    "Propulsore DX": [st.session_state.p2, st.session_state.a2, f"{(ton2_set):.1f}", "SÌ (-20%)" if wash_sx_hits_dx else "NO", f"{ton2_eff:.1f}"]
-})
-st.table(df_engines)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        st.pyplot(fig)
