@@ -59,6 +59,9 @@ def full_reset_sim():
     st.session_state.history_y = []
     st.session_state.zoom_level = 80.0
     # Reset anche del Pivot ai default
+    reset_pivot_point()
+
+def reset_pivot_point():
     st.session_state.pp_manual_x = DEFAULT_PP_X
     st.session_state.pp_manual_y = DEFAULT_PP_Y
 
@@ -68,56 +71,85 @@ def update_zoom(delta):
     if new_zoom > 300: new_zoom = 300
     st.session_state.zoom_level = new_zoom
 
-# --- SOLVER FAST SIDE STEP ---
+# --- SOLVER FAST SIDE STEP (CORRETTO V7.8) ---
 def solve_fast_side_step(mode):
-    Y_target = st.session_state.pp_manual_y # Usa il Pivot manuale come target
-    dy = -17.0 # Distanza approssimativa motori-pivot
-    # Se il pivot è molto diverso, ricalcoliamo dy
-    dy = Y_target - POS_THRUSTERS_Y 
-    if abs(dy) < 0.1: dy = 0.1 # Evita divisione per zero
-
-    dx_sx = -POS_THRUSTERS_X
-    dx_dx = POS_THRUSTERS_X
+    # Logica: Applicare spinta laterale e calcolare la correzione longitudinale (Fx)
+    # per azzerare il momento sul Pivot Point manuale attuale.
     
-    if mode == "DRITTA":
-        p_m, a_m = 50.0, 50.0
-        rad_m = np.radians(a_m)
-        Fy_m = p_m * np.cos(rad_m)
-        Fx_m = p_m * np.sin(rad_m)
-        M_m = (dx_sx * Fy_m) - (dy * Fx_m)
-        
-        Fy_s = -Fy_m
-        Fx_s = (M_m + dx_dx * Fy_s) / dy
-        
-        p_s = np.sqrt(Fx_s**2 + Fy_s**2)
-        rad_s = np.arctan2(Fx_s, Fy_s)
-        a_s = np.degrees(rad_s) % 360
-        set_engine_state(int(p_m), int(a_m), int(p_s), int(a_s))
-        
-    else: # SINISTRA
-        p_m, a_m = 50.0, 310.0
-        rad_m = np.radians(a_m)
-        Fy_m = p_m * np.cos(rad_m)
-        Fx_m = p_m * np.sin(rad_m)
-        M_m = (dx_dx * Fy_m) - (dy * Fx_m)
-        
-        Fy_s = -Fy_m
-        Fx_s = (M_m + dx_sx * Fy_s) / dy
-        
-        p_s = np.sqrt(Fx_s**2 + Fy_s**2)
-        rad_s = np.arctan2(Fx_s, Fy_s)
-        a_s = np.degrees(rad_s) % 360
-        set_engine_state(int(p_s), int(a_s), int(p_m), int(a_m))
+    pp_x = st.session_state.pp_manual_x
+    pp_y = st.session_state.pp_manual_y
+    
+    # 1. Definiamo la spinta laterale desiderata (Base 50%)
+    thrust_base = 50.0 
+    
+    # Direzione laterale pura (+1 Right, -1 Left)
+    sign = 1.0 if mode == "DRITTA" else -1.0
+    
+    # Componente Fy (Sway) generata da entrambi i motori (entrambi spingono di lato)
+    # Ipotizziamo Fy_totale distribuita 50/50
+    Fy_single = thrust_base * sign # 50% tonnellaggio in direzione
+    
+    # 2. Calcolo del Momento generato dalla sola spinta laterale
+    # Momento = Fy * Braccio_Longitudinale
+    # Braccio = (Pos_Motori_Y - Pivot_Y)
+    # Nota: Se motori sono a -12 e Pivot a +5, braccio è -17.
+    # Fy positivo (dx) * Braccio negativo (-17) = Momento Negativo (Rotazione Oraria/DX)
+    arm_y = POS_THRUSTERS_Y - pp_y
+    
+    M_sway_sx = (pos_sx[0] - pp_x) * 0 - (arm_y) * Fy_single # Cross product r x F (Fx=0 qui)
+    M_sway_dx = (pos_dx[0] - pp_x) * 0 - (arm_y) * Fy_single
+    M_tot_sway = M_sway_sx + M_sway_dx
+    
+    # 3. Dobbiamo generare un Momento opposto usando Fx (Surge)
+    # M_correction = - M_tot_sway
+    # Usiamo una coppia: SX spinge/tira, DX tira/spinge.
+    # Braccio X = Distanza laterale dal Pivot
+    arm_x_sx = pos_sx[0] - pp_x # circa -2.7
+    arm_x_dx = pos_dx[0] - pp_x # circa +2.7
+    
+    # Vogliamo Fx_sx e Fx_dx tali che:
+    # (arm_x_sx * Fx_sx) - (arm_y * 0) + (arm_x_dx * Fx_dx) - (arm_y * 0) = - M_tot_sway
+    # Assumiamo Fx_sx = -Fx_dx (Coppia pura) -> Fx_sx = F_corr, Fx_dx = -F_corr
+    # arm_x_sx * F_corr + arm_x_dx * (-F_corr) = - M_tot_sway
+    # F_corr * (arm_x_sx - arm_x_dx) = - M_tot_sway
+    
+    denom = (arm_x_sx - arm_x_dx) # circa -5.4
+    if abs(denom) < 0.1: denom = -0.1
+    
+    F_corr_sx = - M_tot_sway / denom
+    F_corr_dx = - F_corr_sx
+    
+    # 4. Ricomposizione vettori (Fy, Fx) -> (Potenza, Angolo)
+    # SX Engine
+    vec_sx = np.array([F_corr_sx, Fy_single])
+    pow_sx = np.linalg.norm(vec_sx)
+    ang_sx = np.degrees(np.arctan2(vec_sx[0], vec_sx[1])) % 360 # atan2(x, y) per azimuth nautico
+    
+    # DX Engine
+    vec_dx = np.array([F_corr_dx, Fy_single])
+    pow_dx = np.linalg.norm(vec_dx)
+    ang_dx = np.degrees(np.arctan2(vec_dx[0], vec_dx[1])) % 360
+    
+    # Normalizzazione se la potenza supera 100%
+    max_p = max(pow_sx, pow_dx)
+    if max_p > 100:
+        scale = 100.0 / max_p
+        pow_sx *= scale
+        pow_dx *= scale
+        # Nota: scalando riduciamo anche la Fy, quindi il side step sarà più lento, ma bilanciato.
+
+    set_engine_state(int(pow_sx), int(ang_sx), int(pow_dx), int(ang_dx))
+
 
 def apply_slow_side_step(direction):
     if direction == "DRITTA":
-        set_engine_state(50, 10, 50, 170)
+        set_engine_state(50, 45, 50, 135) # Configurazione a V per spinta laterale + stabilità
     else:
-        set_engine_state(50, 190, 50, 350)
+        set_engine_state(50, 315, 50, 225)
 
 def apply_turn_on_the_spot(direction):
     if direction == "DRITTA":
-        set_engine_state(50, 330, 50, 210)
+        set_engine_state(50, 330, 50, 210) # Rotazione pura
     else:
         set_engine_state(50, 150, 50, 30)
 
@@ -197,8 +229,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📍 Pivot Point Manuale")
     pp_c1, pp_c2 = st.columns(2)
-    st.session_state.pp_manual_x = pp_c1.number_input("Pos. X (m)", value=float(st.session_state.pp_manual_x), step=0.1, min_value=-10.0, max_value=10.0)
-    st.session_state.pp_manual_y = pp_c2.number_input("Pos. Y (m)", value=float(st.session_state.pp_manual_y), step=0.1, min_value=-20.0, max_value=20.0)
+    # Limiti impostati su dimensioni scafo approssimative (W=11.7 -> +/-5.8, L=32.5 -> +/-16.0)
+    st.session_state.pp_manual_x = pp_c1.number_input("Pos. X (m)", value=float(st.session_state.pp_manual_x), step=0.1, min_value=-5.8, max_value=5.8)
+    st.session_state.pp_manual_y = pp_c2.number_input("Pos. Y (m)", value=float(st.session_state.pp_manual_y), step=0.1, min_value=-16.0, max_value=16.0)
+    st.button("Reset PP Default", on_click=reset_pivot_point, use_container_width=True)
 
 pos_sx, pos_dx = np.array([-POS_THRUSTERS_X, POS_THRUSTERS_Y]), np.array([POS_THRUSTERS_X, POS_THRUSTERS_Y])
 
@@ -240,7 +274,6 @@ if show_prediction:
     thrust_l = (st.session_state.p1 / 100.0) * MAX_THRUST
     thrust_r = (st.session_state.p2 / 100.0) * MAX_THRUST
     
-    # PASSAGGIO PIVOT MANUALE AL MOTORE FISICO
     st.session_state.physics.update(dt, thrust_l, st.session_state.a1, thrust_r, st.session_state.a2, 
                                     st.session_state.pp_manual_x, st.session_state.pp_manual_y)
     
@@ -253,7 +286,6 @@ if show_prediction:
 else:
     st.session_state.physics.reset()
     st.session_state.last_time = time.time() 
-    # Reset pivot physics state to manual
     st.session_state.physics.current_pp_y = st.session_state.pp_manual_y
 
 # --- LAYOUT GUI ---
@@ -272,8 +304,6 @@ with col_r:
     st.pyplot(plot_clock(st.session_state.a2, 'green'))
 
 with col_c:
-    # RIMOSSO EXPANDER AUTOMATICO
-    
     if wash_dx_hits_sx:
         st.error("⚠️ ATTENZIONE: Flusso DX investe SX -> Perdita 20% spinta SX")
     if wash_sx_hits_dx:
@@ -392,11 +422,8 @@ with col_c:
 st.write("---")
 st.subheader("📋 Telemetria di Manovra (Pivot Manuale)")
 
-# Coordinate Pivot Manuale
 PP_MAN = np.array([st.session_state.pp_manual_x, st.session_state.pp_manual_y])
 
-# Calcolo Momento rispetto al PP Manuale
-# Momento = Forza * Braccio (Cross Product in 2D)
 arm_sx = pos_sx - PP_MAN
 arm_dx = pos_dx - PP_MAN
 
