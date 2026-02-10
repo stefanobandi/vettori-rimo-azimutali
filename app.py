@@ -8,7 +8,7 @@ from physics import *
 from visualization import *
 import time
 
-st.set_page_config(page_title="ASD Centurion V7.8", layout="wide")
+st.set_page_config(page_title="ASD Centurion sim", layout="wide")
 
 st.markdown("""
 <style>
@@ -155,7 +155,7 @@ def intersect_lines(p1, angle1_deg, p2, angle2_deg):
     except: return None
 
 # --- UI HEADER ---
-st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion V7.8 ⚓</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚓ ASD Centurion sim ⚓</h1>", unsafe_allow_html=True)
 st.markdown("<div style='text-align: center;'><i>per info contattare stefano.bandi22@gmail.com</i></div>", unsafe_allow_html=True)
 st.write("---")
 
