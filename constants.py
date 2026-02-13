@@ -6,6 +6,8 @@ G_ACCEL = 9.80665
 # Dati Nave
 SHIP_LENGTH = 32.50
 SHIP_WIDTH = 11.70
+MAX_SPEED_FORWARD_KT = 12.8
+MAX_SPEED_REVERSE_KT = 12.0
 
 # Posizioni Geometriche
 POS_THRUSTERS_Y = -12.0
@@ -30,8 +32,9 @@ MOMENT_OF_INERTIA = 12000000.0
 
 # DAMPING (Resistenze)
 
-# Surge: Resistenza all'avanzamento (V_max 12.7kt)
-QUADRATIC_DAMPING_SURGE = 16100.0
+# Surge: Resistenza all'avanzamento
+QUADRATIC_DAMPING_SURGE_FORWARD = 16100.0  # Per V_max ~12.8kt
+QUADRATIC_DAMPING_SURGE_REVERSE = 18000.0  # Per V_max ~12.0kt
 
 # Sway: Resistenza laterale (Skeg profondo)
 # Aumentato a 135k per limitare la velocità laterale a ~1.2kt con 5t di spinta
